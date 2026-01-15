@@ -28,12 +28,23 @@ impl Default for GameTimer {
 }
 
 /// Score tracking
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct Score {
     pub current: i32,
     pub passing_grade: i32,
     pub correct_answers: usize,
     pub total_answered: usize,
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self {
+            current: 0,
+            passing_grade: 6, // Default passing grade
+            correct_answers: 0,
+            total_answered: 0,
+        }
+    }
 }
 
 /// Manages all cards in the game
