@@ -4,37 +4,56 @@
 
 ### Critical Distinction: Framework vs Game
 
-**CGQ is NOT a quiz application. CGQ is a framework/engine for building quiz applications.**
+**CGQ is NOT a quiz application. CGQ is a framework/engine for building card-based interactive games.**
 
 This document describes:
-1. **CGQ Engine** - The reusable, content-agnostic framework (what we're building)
-2. **Reference Implementation** - The Palestinian history quiz (built using the engine to validate it)
+1. **CGQ Engine** - The reusable, game-type-agnostic framework (what we're building)
+2. **Game Type Plugins** - Quiz, Grid, Deck-builder, etc. (implemented as traits)
+3. **Reference Implementation** - The Palestinian history quiz (validates the framework)
 
 ### System Design Philosophy
 
-**Core Principle: Everything game-specific must be external data, never hardcoded.**
+**Core Principles:**
 
-Build a **generic CGQ engine** that treats quiz content as data, not code. The system should be:
-- **Format-agnostic**: Quiz content in JSON/YAML, not hardcoded structures
-- **Source-agnostic**: Questions can come from files, APIs, databases
-- **Extensible**: Plugin system for new card effects without engine changes
+1. **Everything game-specific must be external data or plugins, never hardcoded**
+2. **Game types are pluggable** - Support Quiz, Grid, Deck-builder, and custom types
+3. **Cards are universal** - Same card system works across all game types via interceptors
+4. **Component-based architecture** - Game state is composed of reusable components
+5. **Interceptor pattern** - Cards hook into component queries/mutations
+
+Build a **generic CGQ engine** that:
+- **Game-type-agnostic**: Supports multiple game types via trait system
+- **Format-agnostic**: Content in JSON/YAML, not hardcoded structures
+- **Source-agnostic**: Data can come from files, APIs, databases
+- **Extensible**: Plugin system for new game types and card effects
 - **Protocol-based**: Clean interfaces between components
-- **Data-driven**: All game rules, cards, questions loaded from configuration
+- **Data-driven**: All game rules, cards, content loaded from configuration
 - **Themeable**: Visual design/assets separate from engine logic
 
-**Anti-pattern to avoid**: Hardcoding quiz-specific logic in the engine
+**Anti-patterns to avoid**:
 
 ```typescript
-// ❌ BAD - Hardcoded in engine
+// ❌ BAD - Hardcoded game type in engine
+if (gameType === "quiz") {
+  processQuizAnswer(input);
+} else if (gameType === "grid") {
+  processGridMove(input);
+}
+
+// ✅ GOOD - Game type plugin handles its own logic
+const gameType = loadGameType(config.game_type);
+gameType.process_input(state, input);
+
+// ❌ BAD - Hardcoded card effect
 if (card.id === "yaffa_drone") {
   eliminateOneWrongAnswer();
 }
 
-// ✅ GOOD - Generic effect interpretation
-const effect = card.effects.find(e => e.type === "ELIMINATE_WRONG_ANSWER");
-if (effect) {
-  eliminateWrongAnswers(effect.count);
-}
+// ✅ GOOD - Interceptor-based effect
+card.effects.forEach(effect => {
+  componentSystem.registerInterceptor(effect);
+});
+// Effect automatically intercepts relevant component queries
 ```
 
 ### Component Architecture
@@ -98,6 +117,483 @@ if (effect) {
 │  ✅ Content data = Game-specific                          │
 │  ❌ NO hardcoded quiz content in engine                   │
 └────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Game Type System
+
+### GameType Trait
+
+All game types implement a common trait/interface:
+
+```rust
+#[async_trait]
+pub trait GameType: Send + Sync {
+    // Type definitions
+    type State: Clone + Serialize + Deserialize;
+    type Input;
+    type Config;
+
+    // Lifecycle
+    fn initialize(&self, config: &Self::Config) -> Self::State;
+    fn update(&mut self, state: &mut Self::State, delta_time: f64);
+    fn check_win_condition(&self, state: &Self::State) -> Option<GameResult>;
+
+    // Input processing
+    fn process_input(&mut self, state: &mut Self::State, input: Self::Input) -> Result<()>;
+
+    // Component access
+    fn get_components(&self, state: &Self::State) -> Vec<Component>;
+    fn query_component(&self, state: &Self::State, query: &ComponentQuery) -> QueryResult;
+    fn mutate_component(&mut self, state: &mut Self::State, mutation: &ComponentMutation);
+
+    // Metadata
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn required_components(&self) -> Vec<String>;
+}
+```
+
+**TypeScript Interface**:
+```typescript
+interface GameType<TState, TInput, TConfig> {
+  // Lifecycle
+  initialize(config: TConfig): TState
+  update(state: TState, deltaTime: number): void
+  checkWinCondition(state: TState): GameResult | null
+
+  // Input processing
+  processInput(state: TState, input: TInput): void
+
+  // Component access
+  getComponents(state: TState): Component[]
+  queryComponent(state: TState, query: ComponentQuery): any
+  mutateComponent(state: TState, mutation: ComponentMutation): void
+
+  // Metadata
+  name: string
+  description: string
+  requiredComponents: string[]
+}
+```
+
+### Built-in Game Types
+
+#### 1. Quiz Game Type
+
+```typescript
+class QuizGameType implements GameType<QuizState, QuizInput, QuizConfig> {
+  name = "Quiz"
+  description = "Multiple-choice question-answering game"
+  requiredComponents = ["Question", "Score", "Timer", "Answer"]
+
+  initialize(config: QuizConfig): QuizState {
+    return {
+      currentQuestionIndex: 0,
+      questions: shuffle(config.questions),
+      score: 0,
+      passingGrade: config.passingGrade,
+      timer: config.initialTimerSeconds * 1000,
+      activeCards: []
+    }
+  }
+
+  processInput(state: QuizState, input: QuizInput): void {
+    if (input.type === 'ANSWER_SUBMITTED') {
+      const question = state.questions[state.currentQuestionIndex]
+      const correct = question.options.find(o => o.id === input.answer)?.correct
+
+      if (correct) {
+        // Trigger score mutation (interceptors can modify this)
+        this.mutateComponent(state, {
+          component: 'Score',
+          operation: 'add',
+          oldValue: state.score,
+          newValue: state.score + question.points
+        })
+      }
+
+      state.currentQuestionIndex++
+    }
+  }
+
+  queryComponent(state: QuizState, query: ComponentQuery): any {
+    // All queries go through interceptor pipeline
+    switch (query.component) {
+      case 'Question':
+        if (query.operation === 'get_current') {
+          return state.questions[state.currentQuestionIndex]
+        }
+        if (query.operation === 'get_options') {
+          return state.questions[state.currentQuestionIndex].options
+        }
+        break
+
+      case 'Score':
+        if (query.operation === 'get') {
+          return state.score
+        }
+        break
+
+      case 'Timer':
+        if (query.operation === 'get_remaining') {
+          return state.timer
+        }
+        break
+    }
+  }
+
+  mutateComponent(state: QuizState, mutation: ComponentMutation): void {
+    // All mutations go through interceptor pipeline
+    switch (mutation.component) {
+      case 'Score':
+        if (mutation.operation === 'add') {
+          state.score = mutation.newValue
+        }
+        break
+
+      case 'Timer':
+        if (mutation.operation === 'adjust') {
+          state.timer += mutation.params.delta
+        }
+        break
+    }
+  }
+}
+```
+
+#### 2. Grid Game Type (Battleship-style)
+
+```typescript
+class GridGameType implements GameType<GridState, GridInput, GridConfig> {
+  name = "Grid"
+  description = "Grid-based positioning and revelation game"
+  requiredComponents = ["Grid", "Position", "Ship", "Score"]
+
+  initialize(config: GridConfig): GridState {
+    return {
+      grid: createGrid(config.width, config.height),
+      ships: placeShips(config.ships, config.width, config.height),
+      revealedCells: new Set(),
+      score: 0,
+      movesRemaining: config.maxMoves
+    }
+  }
+
+  processInput(state: GridState, input: GridInput): void {
+    if (input.type === 'CELL_SELECTED') {
+      const { x, y } = input.position
+
+      // Query cell (interceptors can reveal adjacent cells, etc.)
+      const cell = this.queryComponent(state, {
+        component: 'Grid',
+        operation: 'get_cell',
+        params: { x, y }
+      })
+
+      // Mutate cell state
+      this.mutateComponent(state, {
+        component: 'Position',
+        operation: 'reveal',
+        params: { x, y }
+      })
+
+      state.revealedCells.add(`${x},${y}`)
+      state.movesRemaining--
+    }
+  }
+
+  queryComponent(state: GridState, query: ComponentQuery): any {
+    switch (query.component) {
+      case 'Grid':
+        if (query.operation === 'get_cell') {
+          const { x, y } = query.params
+          return state.grid[y][x]
+        }
+        if (query.operation === 'get_cells') {
+          return state.grid.flat()
+        }
+        break
+
+      case 'Position':
+        if (query.operation === 'is_revealed') {
+          const { x, y } = query.params
+          return state.revealedCells.has(`${x},${y}`)
+        }
+        break
+    }
+  }
+}
+```
+
+### Game Type Configuration
+
+```yaml
+# Quiz game config
+game_type: quiz
+config:
+  passing_grade: 20
+  initial_timer_seconds: 960  # 16 minutes
+  questions_file: ./questions/part1.yml
+  randomize_questions: true
+  randomize_options: true
+
+# Grid game config
+game_type: grid
+config:
+  width: 10
+  height: 10
+  ships:
+    - size: 5
+      count: 1
+    - size: 4
+      count: 2
+    - size: 3
+      count: 3
+  max_moves: 50
+  questions_file: ./questions/naval.yml  # Answer correctly to get moves
+```
+
+---
+
+## Component/Interceptor Architecture
+
+### Component Query System
+
+All game state access goes through a **query/mutation pipeline**:
+
+```typescript
+interface ComponentQuery {
+  component: string       // e.g., 'Score', 'Grid', 'Question'
+  operation: string       // e.g., 'get', 'add', 'update'
+  params?: any            // Operation-specific parameters
+}
+
+interface ComponentMutation {
+  component: string
+  operation: string
+  oldValue?: any
+  newValue: any
+  params?: any
+}
+
+interface QueryResult {
+  value: any
+  metadata?: {
+    source: string
+    timestamp: number
+    intercepted_by: string[]
+  }
+}
+```
+
+### ComponentSystem Implementation
+
+```typescript
+class ComponentSystem {
+  private gameType: GameType<any, any, any>
+  private interceptors: Map<string, CardEffect[]> = new Map()
+
+  constructor(gameType: GameType<any, any, any>) {
+    this.gameType = gameType
+  }
+
+  // Register a card's effects as interceptors
+  registerCard(card: Card): void {
+    for (const effect of card.effects) {
+      for (const pattern of effect.intercepts) {
+        const key = `${pattern.component}:${pattern.operation}`
+        if (!this.interceptors.has(key)) {
+          this.interceptors.set(key, [])
+        }
+        this.interceptors.get(key)!.push(effect)
+      }
+    }
+
+    // Sort by priority (higher first)
+    this.interceptors.forEach(effects => {
+      effects.sort((a, b) => (b.priority || 0) - (a.priority || 0))
+    })
+  }
+
+  // Execute query with interceptor pipeline
+  query(state: any, query: ComponentQuery): any {
+    // Get base result from game type
+    let result = this.gameType.queryComponent(state, query)
+
+    // Apply 'before' interceptors
+    result = this.applyInterceptors(query, result, 'before')
+
+    // Apply 'after' interceptors
+    result = this.applyInterceptors(query, result, 'after')
+
+    return result
+  }
+
+  // Execute mutation with interceptor pipeline
+  mutate(state: any, mutation: ComponentMutation): void {
+    let { newValue } = mutation
+
+    // Apply 'on_mutation' interceptors
+    newValue = this.applyMutationInterceptors(mutation, newValue)
+
+    // Apply to game state
+    this.gameType.mutateComponent(state, { ...mutation, newValue })
+  }
+
+  private applyInterceptors(query: ComponentQuery, result: any, timing: string): any {
+    const interceptors = this.getInterceptors(query, timing)
+
+    for (const effect of interceptors) {
+      // Check conditions if any
+      if (effect.condition && !this.evaluateCondition(effect.condition, query, result)) {
+        continue
+      }
+
+      // Apply transform
+      try {
+        result = effect.transform(query, result)
+      } catch (error) {
+        console.error(`Error in interceptor ${effect.id}:`, error)
+      }
+    }
+
+    return result
+  }
+
+  private getInterceptors(query: ComponentQuery, timing: string): CardEffect[] {
+    const exactKey = `${query.component}:${query.operation}`
+    const wildcardKey = `${query.component}:*`
+
+    const exact = this.interceptors.get(exactKey) || []
+    const wildcard = this.interceptors.get(wildcardKey) || []
+
+    return [...exact, ...wildcard].filter(e => e.timing === timing)
+  }
+
+  private evaluateCondition(condition: string, query: ComponentQuery, result: any): boolean {
+    // Simple expression evaluator (in real impl, use a safe eval library)
+    try {
+      const func = new Function('query', 'result', `return ${condition}`)
+      return func(query, result)
+    } catch {
+      return false
+    }
+  }
+}
+```
+
+### Card Effect Definition
+
+```typescript
+interface CardEffect {
+  id: string
+  priority?: number              // Higher = applied first (default: 0)
+  intercepts: InterceptPattern[]
+  transform: (query: ComponentQuery, result: any) => any
+  timing: 'before' | 'after' | 'on_mutation'
+  condition?: string             // JavaScript expression to evaluate
+  duration?: 'permanent' | 'one_time' | 'turns' | 'duration_ms'
+}
+
+interface InterceptPattern {
+  component: string | string[]   // Component name(s)
+  operation: string              // Operation name or '*' for all
+  when?: Record<string, any>     // Conditional parameters
+}
+```
+
+### Card Definition in YAML
+
+```yaml
+# Quiz game card
+card_id: yaffa_drone_strike
+name: "Yaffa Drone Strike"
+type: resistance
+effects:
+  - id: eliminate_wrong_answer
+    priority: 100
+    intercepts:
+      - component: Question
+        operation: get_options
+    transform: |
+      const incorrect = result.filter(opt => !opt.correct);
+      if (incorrect.length === 0) return result;
+      const idx = Math.floor(Math.random() * incorrect.length);
+      return result.filter((_, i) => result.indexOf(incorrect[idx]) !== i);
+    timing: after
+    duration: one_time
+
+# Grid game card
+card_id: radar_sweep
+name: "Radar Sweep"
+type: utility
+effects:
+  - id: reveal_adjacent
+    priority: 50
+    intercepts:
+      - component: Grid
+        operation: get_cells
+    transform: |
+      const { position } = query.params;
+      return result.map(cell => {
+        const dx = Math.abs(cell.x - position.x);
+        const dy = Math.abs(cell.y - position.y);
+        const distance = dx + dy;
+        return distance <= 1 ? { ...cell, revealed: true } : cell;
+      });
+    timing: after
+    duration: one_time
+
+# Universal card (works in any game type)
+card_id: time_warp
+name: "Time Warp"
+type: temporal
+effects:
+  - id: extend_timer
+    intercepts:
+      - component: Timer
+        operation: get_remaining
+    transform: |
+      return result + 60000; // Add 1 minute
+    timing: after
+    duration: one_time
+```
+
+### Effect Execution Example
+
+```typescript
+// Setup
+const gameType = new QuizGameType()
+const state = gameType.initialize(config)
+const componentSystem = new ComponentSystem(gameType)
+
+// Register cards
+const yaffaCard = loadCard('yaffa_drone_strike.yml')
+componentSystem.registerCard(yaffaCard)
+
+// Query with interception
+const question = componentSystem.query(state, {
+  component: 'Question',
+  operation: 'get_current'
+})
+// Returns normal question
+
+const options = componentSystem.query(state, {
+  component: 'Question',
+  operation: 'get_options'
+})
+// Returns options with one incorrect option removed (yaffa card intercepts)
+
+// Mutation with interception
+componentSystem.mutate(state, {
+  component: 'Score',
+  operation: 'add',
+  oldValue: 10,
+  newValue: 13  // Base +3 points
+})
+// If "double_points" card is active, mutation interceptor changes newValue to 16
 ```
 
 ---
@@ -825,68 +1321,584 @@ App
 
 ---
 
-## Campaign Mode Specifics
+## Persistence Layer
 
-### Progression System
+### Storage Backend Architecture
 
-```typescript
-interface CampaignProgress {
-  current_level: number
-  completed_levels: Set<number>
-  unlocked_cards: Set<string>
-  store_level: number
-  currency: number
-  deposited_cards: {
-    resistance: number
-    palestinian: number
-    politics: number
-  }
+**Key Requirement**: Users must be able to resume progress across quiz sessions.
+
+**Design Pattern**: Trait/interface-based abstraction for swappable storage backends
+
+```
+┌────────────────────────────────────────┐
+│      Campaign Manager / Services       │
+└──────────────────┬─────────────────────┘
+                   │
+                   ▼
+┌────────────────────────────────────────┐
+│      StorageBackend Trait/Interface    │
+│                                        │
+│  ✅ Generic, reusable interface        │
+│  ✅ Framework code, not game code      │
+└──────────────────┬─────────────────────┘
+                   │
+        ┌──────────┴────────┬────────────┐
+        │                   │            │
+┌───────▼─────┐  ┌─────────▼──┐  ┌──────▼────┐
+│  Supabase   │  │ PostgreSQL │  │  SQLite   │
+│     Impl    │  │    Impl    │  │   Impl    │
+└─────────────┘  └────────────┘  └───────────┘
+```
+
+### Storage Backend Trait
+
+**Rust Interface**:
+```rust
+#[async_trait]
+pub trait StorageBackend: Send + Sync {
+    // User management
+    async fn get_or_create_user(&self, twitch_id: &str, username: &str) -> Result<User>;
+    async fn update_last_seen(&self, user_id: &str) -> Result<()>;
+
+    // Card ownership - CRITICAL for campaign mode
+    async fn get_user_cards(&self, user_id: &str, quiz_id: &str) -> Result<Vec<UserCard>>;
+    async fn add_card_to_user(
+        &self,
+        user_id: &str,
+        card_id: &str,
+        quiz_id: &str,
+        method: AcquisitionMethod
+    ) -> Result<UserCard>;
+    async fn user_owns_card(&self, user_id: &str, card_id: &str, quiz_id: &str) -> Result<bool>;
+
+    // Campaign progress
+    async fn get_campaign_progress(&self, user_id: &str, quiz_id: &str) -> Result<CampaignProgress>;
+    async fn update_campaign_progress(&self, progress: &CampaignProgress) -> Result<()>;
+    async fn complete_level(
+        &self,
+        user_id: &str,
+        quiz_id: &str,
+        level: i32,
+        surplus_points: i32
+    ) -> Result<()>;
+
+    // Store management
+    async fn get_store_deposits(&self, user_id: &str, quiz_id: &str) -> Result<HashMap<CardType, i32>>;
+    async fn deposit_card_for_upgrade(
+        &self,
+        user_id: &str,
+        card_id: &str,
+        quiz_id: &str,
+        card_type: CardType
+    ) -> Result<()>;
+    async fn upgrade_store(&self, user_id: &str, quiz_id: &str) -> Result<i32>;
+
+    // Statistics
+    async fn record_game_result(
+        &self,
+        user_id: &str,
+        quiz_id: &str,
+        result: GameResult
+    ) -> Result<()>;
 }
 
+pub struct GameResult {
+    pub won: bool,
+    pub score: i32,
+    pub questions_answered: i32,
+    pub correct_answers: i32,
+}
+```
+
+**TypeScript Interface**:
+```typescript
+interface StorageBackend {
+  // User management
+  getOrCreateUser(twitchId: string, username: string): Promise<User>;
+  updateLastSeen(userId: string): Promise<void>;
+
+  // Card ownership
+  getUserCards(userId: string, quizId: string): Promise<UserCard[]>;
+  addCardToUser(
+    userId: string,
+    cardId: string,
+    quizId: string,
+    method: AcquisitionMethod
+  ): Promise<UserCard>;
+  userOwnsCard(userId: string, cardId: string, quizId: string): Promise<boolean>;
+
+  // Campaign progress
+  getCampaignProgress(userId: string, quizId: string): Promise<CampaignProgress>;
+  updateCampaignProgress(progress: CampaignProgress): Promise<void>;
+  completeLevel(userId: string, quizId: string, level: number, surplusPoints: number): Promise<void>;
+
+  // Store management
+  getStoreDeposits(userId: string, quizId: string): Promise<Map<CardType, number>>;
+  depositCardForUpgrade(
+    userId: string,
+    cardId: string,
+    quizId: string,
+    cardType: CardType
+  ): Promise<void>;
+  upgradeStore(userId: string, quizId: string): Promise<number>; // Returns new store level
+
+  // Statistics
+  recordGameResult(userId: string, quizId: string, result: GameResult): Promise<void>;
+}
+```
+
+### Supabase Implementation
+
+**Initial Backend**: Supabase (PostgreSQL-based, free tier, real-time capabilities)
+
+#### Database Schema
+
+```sql
+-- Users table
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  twitch_id VARCHAR(255) UNIQUE NOT NULL,
+  twitch_username VARCHAR(255) NOT NULL,
+  display_name VARCHAR(255),
+  created_at TIMESTAMP DEFAULT NOW(),
+  last_seen TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_twitch_id ON users(twitch_id);
+
+-- Card ownership table
+CREATE TABLE user_cards (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  card_id VARCHAR(255) NOT NULL,
+  quiz_id VARCHAR(255) NOT NULL,
+  acquisition_method VARCHAR(50) NOT NULL CHECK (acquisition_method IN ('earned', 'purchased', 'deposited')),
+  acquisition_date TIMESTAMP DEFAULT NOW(),
+  is_deposited BOOLEAN DEFAULT FALSE,
+  UNIQUE(user_id, card_id, quiz_id)
+);
+
+CREATE INDEX idx_user_cards_user_id ON user_cards(user_id);
+CREATE INDEX idx_user_cards_user_quiz ON user_cards(user_id, quiz_id);
+
+-- Campaign progress table
+CREATE TABLE campaign_progress (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  quiz_id VARCHAR(255) NOT NULL,
+  current_level INTEGER DEFAULT 1,
+  store_level INTEGER DEFAULT 1,
+  currency INTEGER DEFAULT 0,
+  completed_levels INTEGER[] DEFAULT '{}',
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(user_id, quiz_id)
+);
+
+CREATE INDEX idx_campaign_user_quiz ON campaign_progress(user_id, quiz_id);
+
+-- Store deposits table
+CREATE TABLE store_deposits (
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  quiz_id VARCHAR(255) NOT NULL,
+  card_type VARCHAR(50) NOT NULL,
+  count INTEGER DEFAULT 0,
+  updated_at TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY(user_id, quiz_id, card_type)
+);
+
+-- Quiz statistics table
+CREATE TABLE quiz_stats (
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  quiz_id VARCHAR(255) NOT NULL,
+  total_games INTEGER DEFAULT 0,
+  wins INTEGER DEFAULT 0,
+  losses INTEGER DEFAULT 0,
+  total_questions_answered INTEGER DEFAULT 0,
+  total_correct_answers INTEGER DEFAULT 0,
+  best_score INTEGER DEFAULT 0,
+  last_played TIMESTAMP,
+  PRIMARY KEY(user_id, quiz_id)
+);
+```
+
+#### Supabase Client Implementation
+
+```typescript
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
+
+class SupabaseStorageBackend implements StorageBackend {
+  private client: SupabaseClient
+
+  constructor(url: string, anonKey: string) {
+    this.client = createClient(url, anonKey)
+  }
+
+  async getOrCreateUser(twitchId: string, username: string): Promise<User> {
+    // Try to get existing user
+    const { data: existing } = await this.client
+      .from('users')
+      .select('*')
+      .eq('twitch_id', twitchId)
+      .single()
+
+    if (existing) {
+      // Update last_seen
+      await this.client
+        .from('users')
+        .update({ last_seen: new Date(), twitch_username: username })
+        .eq('id', existing.id)
+
+      return existing
+    }
+
+    // Create new user
+    const { data: newUser, error } = await this.client
+      .from('users')
+      .insert({
+        twitch_id: twitchId,
+        twitch_username: username,
+        display_name: username
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return newUser
+  }
+
+  async getUserCards(userId: string, quizId: string): Promise<UserCard[]> {
+    const { data, error } = await this.client
+      .from('user_cards')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('quiz_id', quizId)
+      .eq('is_deposited', false) // Only non-deposited cards are "owned"
+
+    if (error) throw error
+    return data || []
+  }
+
+  async addCardToUser(
+    userId: string,
+    cardId: string,
+    quizId: string,
+    method: AcquisitionMethod
+  ): Promise<UserCard> {
+    const { data, error } = await this.client
+      .from('user_cards')
+      .insert({
+        user_id: userId,
+        card_id: cardId,
+        quiz_id: quizId,
+        acquisition_method: method
+      })
+      .select()
+      .single()
+
+    if (error) {
+      // Handle unique constraint violation (user already owns card)
+      if (error.code === '23505') {
+        // Return existing card
+        const { data: existing } = await this.client
+          .from('user_cards')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('card_id', cardId)
+          .eq('quiz_id', quizId)
+          .single()
+
+        return existing!
+      }
+      throw error
+    }
+
+    return data
+  }
+
+  async getCampaignProgress(userId: string, quizId: string): Promise<CampaignProgress> {
+    const { data, error } = await this.client
+      .from('campaign_progress')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('quiz_id', quizId)
+      .single()
+
+    if (error && error.code === 'PGRST116') {
+      // No progress exists, create initial progress
+      const { data: newProgress, error: insertError } = await this.client
+        .from('campaign_progress')
+        .insert({
+          user_id: userId,
+          quiz_id: quizId,
+          current_level: 1,
+          store_level: 1,
+          currency: 0,
+          completed_levels: []
+        })
+        .select()
+        .single()
+
+      if (insertError) throw insertError
+      return newProgress!
+    }
+
+    if (error) throw error
+    return data!
+  }
+
+  async completeLevel(
+    userId: string,
+    quizId: string,
+    level: number,
+    surplusPoints: number
+  ): Promise<void> {
+    const progress = await this.getCampaignProgress(userId, quizId)
+
+    const { error } = await this.client
+      .from('campaign_progress')
+      .update({
+        current_level: Math.max(progress.current_level, level + 1),
+        completed_levels: [...new Set([...progress.completed_levels, level])],
+        currency: progress.currency + surplusPoints,
+        updated_at: new Date()
+      })
+      .eq('user_id', userId)
+      .eq('quiz_id', quizId)
+
+    if (error) throw error
+  }
+
+  async depositCardForUpgrade(
+    userId: string,
+    cardId: string,
+    quizId: string,
+    cardType: CardType
+  ): Promise<void> {
+    // Mark card as deposited
+    await this.client
+      .from('user_cards')
+      .update({ is_deposited: true })
+      .eq('user_id', userId)
+      .eq('card_id', cardId)
+      .eq('quiz_id', quizId)
+
+    // Increment store deposit count
+    const { data: existing } = await this.client
+      .from('store_deposits')
+      .select('count')
+      .eq('user_id', userId)
+      .eq('quiz_id', quizId)
+      .eq('card_type', cardType)
+      .single()
+
+    if (existing) {
+      await this.client
+        .from('store_deposits')
+        .update({ count: existing.count + 1, updated_at: new Date() })
+        .eq('user_id', userId)
+        .eq('quiz_id', quizId)
+        .eq('card_type', cardType)
+    } else {
+      await this.client
+        .from('store_deposits')
+        .insert({
+          user_id: userId,
+          quiz_id: quizId,
+          card_type: cardType,
+          count: 1
+        })
+    }
+  }
+
+  async upgradeStore(userId: string, quizId: string): Promise<number> {
+    const progress = await this.getCampaignProgress(userId, quizId)
+    const newLevel = progress.store_level + 1
+
+    const { error } = await this.client
+      .from('campaign_progress')
+      .update({ store_level: newLevel, updated_at: new Date() })
+      .eq('user_id', userId)
+      .eq('quiz_id', quizId)
+
+    if (error) throw error
+    return newLevel
+  }
+
+  async recordGameResult(
+    userId: string,
+    quizId: string,
+    result: GameResult
+  ): Promise<void> {
+    const { data: existing } = await this.client
+      .from('quiz_stats')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('quiz_id', quizId)
+      .single()
+
+    if (existing) {
+      await this.client
+        .from('quiz_stats')
+        .update({
+          total_games: existing.total_games + 1,
+          wins: existing.wins + (result.won ? 1 : 0),
+          losses: existing.losses + (result.won ? 0 : 1),
+          total_questions_answered: existing.total_questions_answered + result.questions_answered,
+          total_correct_answers: existing.total_correct_answers + result.correct_answers,
+          best_score: Math.max(existing.best_score, result.score),
+          last_played: new Date()
+        })
+        .eq('user_id', userId)
+        .eq('quiz_id', quizId)
+    } else {
+      await this.client
+        .from('quiz_stats')
+        .insert({
+          user_id: userId,
+          quiz_id: quizId,
+          total_games: 1,
+          wins: result.won ? 1 : 0,
+          losses: result.won ? 0 : 1,
+          total_questions_answered: result.questions_answered,
+          total_correct_answers: result.correct_answers,
+          best_score: result.score,
+          last_played: new Date()
+        })
+    }
+  }
+}
+```
+
+### User Identification via Twitch
+
+**Automatic User Creation**:
+- Extract Twitch user ID from IRC tags in chat messages
+- Call `getOrCreateUser()` on first interaction
+- No manual login/signup required
+
+```typescript
+// Twitch IRC message parsing
+class TwitchChatClient {
+  private storage: StorageBackend
+
+  async handleMessage(tags: Record<string, string>, message: string) {
+    const twitchId = tags['user-id']
+    const username = tags['display-name'] || tags['username']
+
+    // Get or create user automatically
+    const user = await this.storage.getOrCreateUser(twitchId, username)
+
+    // Process command with user context
+    this.processCommand(user, message)
+  }
+}
+```
+
+### Configuration
+
+```yaml
+# config.yml
+storage:
+  backend: supabase # or 'postgresql', 'sqlite'
+
+  supabase:
+    url: ${SUPABASE_URL}
+    anon_key: ${SUPABASE_ANON_KEY}
+    # Optional: service_role_key for admin operations
+
+  postgresql:
+    connection_string: ${DATABASE_URL}
+
+  sqlite:
+    file_path: ./data/cgq.db
+```
+
+### Migration Between Backends
+
+**Export/Import Tools**:
+```bash
+# Export from Supabase
+cgq-cli export --backend supabase --output backup.json
+
+# Import to PostgreSQL
+cgq-cli import --backend postgresql --input backup.json
+
+# Migrate directly
+cgq-cli migrate --from supabase --to postgresql
+```
+
+---
+
+## Campaign Mode Specifics
+
+### Campaign Manager with Persistence
+
+```typescript
 class CampaignManager {
-  private progress: CampaignProgress
+  private storage: StorageBackend
+  private userId: string
+  private quizId: string
 
-  async loadProgress(player_id: string): Promise<CampaignProgress> {
-    // Load from storage
+  constructor(storage: StorageBackend, userId: string, quizId: string) {
+    this.storage = storage
+    this.userId = userId
+    this.quizId = quizId
   }
 
-  async saveProgress(player_id: string): Promise<void> {
-    // Save to storage
+  async loadProgress(): Promise<CampaignProgress> {
+    return await this.storage.getCampaignProgress(this.userId, this.quizId)
   }
 
-  completeLevel(level: number, final_score: number, passing_grade: number): void {
-    this.progress.completed_levels.add(level)
-    this.progress.current_level = level + 1
-
-    // Calculate surplus points
-    const surplus = Math.max(0, final_score - passing_grade)
-    this.progress.currency += surplus
+  async completeLevel(level: number, finalScore: number, passingGrade: number): Promise<void> {
+    const surplusPoints = Math.max(0, finalScore - passingGrade)
+    await this.storage.completeLevel(this.userId, this.quizId, level, surplusPoints)
   }
 
-  purchaseCard(card: Card): boolean {
-    if (this.progress.currency < card.cost!) {
+  async purchaseCard(card: Card): Promise<boolean> {
+    const progress = await this.loadProgress()
+
+    if (progress.currency < card.cost!) {
       return false
     }
 
-    this.progress.currency -= card.cost!
-    this.progress.unlocked_cards.add(card.id)
+    // Deduct currency
+    progress.currency -= card.cost!
+    await this.storage.updateCampaignProgress(progress)
+
+    // Add card to user's collection
+    await this.storage.addCardToUser(
+      this.userId,
+      card.id,
+      this.quizId,
+      AcquisitionMethod.Purchased
+    )
+
     return true
   }
 
-  depositCardForUpgrade(card_type: string): void {
-    this.progress.deposited_cards[card_type]++
+  async depositCardForUpgrade(cardId: string, cardType: CardType): Promise<boolean> {
+    // Check if user owns the card
+    const owns = await this.storage.userOwnsCard(this.userId, cardId, this.quizId)
+    if (!owns) return false
 
-    // Check if upgrade threshold reached
-    const storeConfig = this.getStoreConfig(this.progress.store_level)
-    if (this.canUpgradeStore(storeConfig)) {
-      this.progress.store_level++
+    // Deposit card
+    await this.storage.depositCardForUpgrade(this.userId, cardId, this.quizId, cardType)
+
+    // Check if store can be upgraded
+    const deposits = await this.storage.getStoreDeposits(this.userId, this.quizId)
+    const storeConfig = await this.getStoreConfig()
+
+    if (deposits.get(cardType) >= storeConfig.upgrade_requirement.count) {
+      await this.storage.upgradeStore(this.userId, this.quizId)
+      return true
     }
+
+    return false
   }
 
-  private canUpgradeStore(config: StoreConfig): boolean {
-    return this.progress.deposited_cards.resistance >= config.upgrade_requirement.count
+  async getOwnedCards(): Promise<UserCard[]> {
+    return await this.storage.getUserCards(this.userId, this.quizId)
   }
-}
 ```
 
 ### Store Implementation
