@@ -1,0 +1,67 @@
+metadata:
+  title: "Sample Cards"
+  description: "Example cards showing card format"
+  version: "1.0"
+
+cards:
+  - id: fifty_fifty
+    name: "50/50"
+    type: resistance
+    permanence: permanent
+    vote_requirement: 2
+    cost: 5
+    description: "Eliminates two wrong answers from the question"
+    tags: ["helpful", "eliminate"]
+    effects:
+      - id: eliminate_two
+        type: eliminate_wrong_answer
+        count: 2
+        intercepts:
+          - component: Question
+            operation: get_options
+        timing: after
+        priority: 100
+    visual:
+      image: "fifty_fifty.png"
+      sound: "eliminate.mp3"
+
+  - id: time_bonus
+    name: "Time Bonus"
+    type: resistance
+    permanence: permanent
+    vote_requirement: 3
+    cost: 7
+    description: "Adds 30 seconds to the timer"
+    tags: ["helpful", "time"]
+    effects:
+      - id: add_time
+        type: add_time
+        seconds: 30
+        intercepts:
+          - component: Timer
+            operation: get_remaining
+        timing: after
+        priority: 50
+    visual:
+      image: "time_bonus.png"
+      sound: "time_extend.mp3"
+
+  - id: double_points
+    name: "Double Points"
+    type: palestinian
+    permanence: permanent
+    vote_requirement: 3
+    cost: 8
+    description: "Doubles points for correct answers"
+    tags: ["helpful", "points"]
+    effects:
+      - id: multiply_points
+        type: multiply_points
+        multiplier: 2.0
+        intercepts:
+          - component: Score
+            operation: get
+        timing: after
+        priority: 75
+    visual:
+      image: "double_points.png"

@@ -3,6 +3,8 @@ use bevy::{
     ui::{node_bundles::*, Style, Val, UiRect, FlexDirection, JustifyContent, AlignItems},
     text::{Text, TextStyle, TextSection},
 };
+use clap::Parser;
+use std::path::PathBuf;
 
 mod components;
 mod resources;
@@ -13,7 +15,22 @@ use components::*;
 use resources::*;
 use systems::*;
 
+#[derive(Parser, Debug, Resource, Clone)]
+#[command(name = "cgq")]
+#[command(about = "Card Game Quiz Framework - A Bevy-based quiz game engine", long_about = None)]
+struct Args {
+    /// Path to the quiz YAML file
+    #[arg(short, long, default_value = "content/palestinian-quiz/questions/test.yml")]
+    quiz: PathBuf,
+
+    /// Path to cards directory (optional)
+    #[arg(short, long)]
+    cards: Option<PathBuf>,
+}
+
 fn main() {
+    let args = Args::parse();
+
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -24,6 +41,7 @@ fn main() {
             ..default()
         }))
         // Resources
+        .insert_resource(args)
         .init_resource::<QuizState>()
         .init_resource::<GameTimer>()
         .init_resource::<Score>()
@@ -43,18 +61,18 @@ fn main() {
 fn load_quiz(
     mut commands: Commands,
     mut quiz_state: ResMut<QuizState>,
+    args: Res<Args>,
 ) {
-    // For now, load questions synchronously from hardcoded path
-    // TODO: Make this async or configurable
-    let yaml_content = std::fs::read_to_string("content/palestinian-quiz/questions/test.yml")
-        .expect("Failed to load questions");
+    // Load questions from CLI-specified path
+    let yaml_content = std::fs::read_to_string(&args.quiz)
+        .unwrap_or_else(|e| panic!("Failed to load questions from {:?}: {}", args.quiz, e));
 
     let question_set: cards::QuestionSet = serde_yaml::from_str(&yaml_content)
-        .expect("Failed to parse questions YAML");
+        .unwrap_or_else(|e| panic!("Failed to parse questions YAML: {}", e));
 
     quiz_state.total_questions = question_set.questions.len();
 
-    info!("Loaded {} questions", question_set.questions.len());
+    info!("Loaded {} questions from {:?}", question_set.questions.len(), args.quiz);
 
     // Spawn all question entities
     for (index, question) in question_set.questions.into_iter().enumerate() {

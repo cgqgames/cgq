@@ -17,3 +17,6 @@ wasm/
 
 # OS
 .DS_Store
+
+# Content (users provide their own quiz/card content)
+content/
