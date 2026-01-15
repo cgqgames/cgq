@@ -63,19 +63,26 @@ When deployed, this spawns an `EliminateWrongAnswers` component that the `card_e
 
 ## Controls
 
-- **Space**: Pause/Resume game
-- (More controls to be added)
+- **ENTER**: Start quiz
+- **A/B/C/D**: Answer questions
+- **N**: Next question (after answering)
+- **SPACE**: Pause/Resume game
 
 ## Development
 
-This is a work in progress. Current status:
+Current status:
 - ✅ Bevy ECS foundation
 - ✅ Component definitions
 - ✅ Card YAML loading
-- ✅ Basic systems (quiz, cards, timer)
-- 🚧 UI rendering
+- ✅ Quiz game loop (fully playable!)
+- ✅ UI rendering (questions, answers, score, timer)
+- ✅ Keyboard input handling
+- ✅ Question progression
+- 🚧 Card deployment system
+- 🚧 Card effects on gameplay
 - 🚧 Twitch integration
 - 🚧 Database persistence
+- 🚧 Campaign mode
 
 ## Documentation
 
