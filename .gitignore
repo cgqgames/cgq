@@ -1,0 +1,19 @@
+# Rust
+target/
+Cargo.lock
+
+# Bevy
+*.wasm
+wasm/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
