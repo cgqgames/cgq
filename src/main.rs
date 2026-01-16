@@ -180,6 +180,7 @@ fn setup(mut commands: Commands) {
 
 fn ui_system(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     quiz_state: Res<QuizState>,
     score: Res<Score>,
     timer: Res<GameTimer>,
@@ -343,6 +344,16 @@ fn ui_system(
     }
 
     if let Ok(question) = questions.get_single() {
+        // Collect card data once for the entire UI render
+        let deployed_cards: Vec<CardDefinition> = card_manager.available_cards
+            .iter()
+            .filter(|card| card_manager.deployed_card_ids.contains(&card.id))
+            .cloned()
+            .collect();
+
+        let all_cards = card_manager.available_cards.clone();
+        let deployed_ids = card_manager.deployed_card_ids.clone();
+
         // Root container (transparent background)
         commands.spawn((
             NodeBundle {
@@ -480,6 +491,7 @@ fn ui_system(
 
             // Cards grid (bottom-right)
             let cbox = &ui_config.cards_grid;
+
             parent.spawn(NodeBundle {
                 style: Style {
                     position_type: bevy::ui::PositionType::Absolute,
@@ -496,10 +508,6 @@ fn ui_system(
                 ..default()
             }).with_children(|cards_box| {
                 // Active Cards Section
-                let deployed_cards: Vec<&CardDefinition> = card_manager.available_cards
-                    .iter()
-                    .filter(|card| card_manager.deployed_card_ids.contains(&card.id))
-                    .collect();
 
                 if !deployed_cards.is_empty() {
                     cards_box.spawn(TextBundle {
@@ -576,7 +584,7 @@ fn ui_system(
                 });
 
                 // Display cards
-                if card_manager.available_cards.is_empty() {
+                if all_cards.is_empty() {
                     cards_box.spawn(TextBundle {
                         text: Text::from_section(
                             "No cards loaded",
@@ -589,7 +597,7 @@ fn ui_system(
                         ..default()
                     });
                 } else {
-                    for card in &card_manager.available_cards {
+                    for card in &all_cards {
                         // Determine card colors based on type
                         let (type_color, type_bg, card_border) = match card.card_type {
                             CardType::Resistance => (
@@ -621,7 +629,7 @@ fn ui_system(
                             .unwrap_or(0);
 
                         let is_activated = current_votes >= card.vote_requirement;
-                        let is_deployed = card_manager.deployed_card_ids.contains(&card.id);
+                        let is_deployed = deployed_ids.contains(&card.id);
 
                         // Card container with card-like styling
                         cards_box.spawn(NodeBundle {
@@ -694,6 +702,21 @@ fn ui_system(
                                 },
                                 ..default()
                             }).with_children(|body| {
+                                // Card image (if available)
+                                if let Some(ref image_path) = card.image_path {
+                                    let image_handle = asset_server.load(image_path.clone());
+                                    body.spawn(ImageBundle {
+                                        style: Style {
+                                            width: Val::Percent(100.0),
+                                            height: Val::Px(80.0),
+                                            margin: UiRect::bottom(Val::Px(6.0)),
+                                            ..default()
+                                        },
+                                        image: UiImage::new(image_handle),
+                                        ..default()
+                                    });
+                                }
+
                                 // Card name
                                 body.spawn(TextBundle {
                                     text: Text::from_section(

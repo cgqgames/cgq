@@ -64,6 +64,7 @@ pub struct CardDefinition {
     pub cost: i32,
     pub vote_requirement: usize,
     pub effects: Vec<CardEffectDefinition>,
+    pub image_path: Option<String>,
 }
 
 #[derive(Clone, Debug)]

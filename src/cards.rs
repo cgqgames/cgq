@@ -107,6 +107,7 @@ fn card_to_definition(card: Card) -> CardDefinition {
             priority: e.priority,
             parameters: e.parameters,
         }).collect(),
+        image_path: card.visual.image.map(|img| format!("cards/{}", img)),
     }
 }
 
