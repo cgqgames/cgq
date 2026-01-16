@@ -17,6 +17,7 @@ mod collections;
 mod ui_config;
 mod chat;
 mod twitch;
+mod chat_plugin;
 
 use components::*;
 use resources::*;
@@ -40,6 +41,10 @@ struct Args {
     /// Path to UI config TOML file (optional, uses built-in defaults if not provided)
     #[arg(short = 'u', long)]
     ui_config: Option<PathBuf>,
+
+    /// Twitch channel to connect to for chat integration (optional)
+    #[arg(short = 't', long)]
+    twitch_channel: Option<String>,
 }
 
 fn main() {
@@ -63,9 +68,11 @@ fn main() {
     };
 
     let background_color = ui_config.background_color();
+    let twitch_channel = args.twitch_channel.clone();
 
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
+    let mut app = App::new();
+
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "CGQ - Card Game Quiz".to_string(),
                 resolution: (1920.0, 1080.0).into(),
@@ -91,8 +98,15 @@ fn main() {
             timer_system,
             input_system,
             ui_system,
-        ))
-        .run();
+        ));
+
+    // Conditionally add chat integration
+    if let Some(channel) = twitch_channel {
+        info!("Enabling Twitch chat integration for channel: {}", channel);
+        app.add_plugins(chat_plugin::ChatPlugin { channel });
+    }
+
+    app.run();
 }
 
 fn load_quiz(
