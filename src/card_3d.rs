@@ -118,7 +118,7 @@ pub fn spawn_card_3d(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
-    asset_server: &Res<AssetServer>,
+    _asset_server: &Res<AssetServer>,
     card: &CardDefinition,
     position: Vec3,
 ) {
@@ -129,22 +129,18 @@ pub fn spawn_card_3d(
         0.01,  // Thickness (very thin like paper)
     ));
 
-    // Load texture if available
-    let texture_handle = if let Some(ref image_path) = card.image_path {
-        Some(asset_server.load(image_path.clone()))
-    } else {
-        None
-    };
+    // For now, use solid color until proper card artwork is ready
+    // TODO: Load and display texture when card artwork is available
+    // let texture_handle = card.image_path.as_ref()
+    //     .map(|path| asset_server.load::<Image>(path.clone()));
 
-    // Create PBR material for paper-like appearance with emissive lighting
+    // Create PBR material with solid light gray color (all cards same color)
     let material = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        base_color_texture: texture_handle.clone(),
-        emissive: Color::srgb(0.5, 0.5, 0.5).into(), // Make cards emit light so they're visible
-        emissive_texture: texture_handle, // Use the same texture for emissive
+        base_color: Color::srgb(0.85, 0.85, 0.85), // All cards same light gray
+        emissive: Color::srgb(0.5, 0.5, 0.5).into(), // Bright emissive for visibility
         perceptual_roughness: 0.8, // Paper is fairly rough
         metallic: 0.0,              // Paper is not metallic
-        reflectance: 0.1,           // Very low reflectance
+        reflectance: 0.2,           // Low reflectance
         unlit: false,
         ..default()
     });
