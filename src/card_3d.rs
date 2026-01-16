@@ -11,29 +11,67 @@ pub struct Card3D {
 #[derive(Component)]
 pub struct CardsCamera;
 
-/// Setup the 3D cards rendering system
+/// Resource to hold the render texture handle
+#[derive(Resource)]
+pub struct CardRenderTexture {
+    pub image_handle: Handle<Image>,
+}
+
+/// Setup the 3D cards rendering system with render-to-texture
 pub fn setup_3d_cards(
     mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
 ) {
     use bevy::render::view::RenderLayers;
-    use bevy::render::camera::OrthographicProjection;
+    use bevy::render::camera::{OrthographicProjection, RenderTarget};
+    use bevy::render::render_resource::{Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages};
 
-    // Orthographic camera positioned to project cards to bottom-right
-    // Using asymmetric frustum to offset the view
+    // Create a render target texture (512x512 for card portal)
+    let size = Extent3d {
+        width: 512,
+        height: 512,
+        depth_or_array_layers: 1,
+    };
+
+    let mut image = Image {
+        texture_descriptor: TextureDescriptor {
+            label: None,
+            size,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Bgra8UnormSrgb,
+            mip_level_count: 1,
+            sample_count: 1,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        },
+        ..default()
+    };
+    image.resize(size);
+
+    let image_handle = images.add(image);
+
+    // Store the handle in a resource for UI to access
+    commands.insert_resource(CardRenderTexture {
+        image_handle: image_handle.clone(),
+    });
+
+    // Orthographic camera that renders to the texture
     commands.spawn((
         Camera3dBundle {
             camera: Camera {
-                order: 1,
-                clear_color: bevy::render::camera::ClearColorConfig::None,
+                order: -1, // Render before main camera
+                target: RenderTarget::Image(image_handle),
                 ..default()
             },
             projection: bevy::render::camera::Projection::Orthographic(OrthographicProjection {
-                scaling_mode: bevy::render::camera::ScalingMode::FixedHorizontal(8.0),
+                scaling_mode: bevy::render::camera::ScalingMode::FixedHorizontal(2.0),
                 ..default()
             }),
-            // Position camera to the right and down so cards appear bottom-right
-            transform: Transform::from_xyz(3.0, -2.0, 5.0)
-                .looking_at(Vec3::new(3.0, -2.0, 0.0), Vec3::Y),
+            // Camera faces cards straight-on
+            transform: Transform::from_xyz(0.0, 0.0, 5.0)
+                .looking_at(Vec3::ZERO, Vec3::Y),
             ..default()
         },
         CardsCamera,
@@ -48,7 +86,7 @@ pub fn setup_3d_cards(
                 shadows_enabled: false,
                 ..default()
             },
-            transform: Transform::from_xyz(3.0, 0.0, 1.0).looking_at(Vec3::new(3.0, -2.0, 0.0), Vec3::Y),
+            transform: Transform::from_xyz(0.0, 1.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..default()
         },
         RenderLayers::layer(1),
@@ -62,7 +100,7 @@ pub fn setup_3d_cards(
                 shadows_enabled: false,
                 ..default()
             },
-            transform: Transform::from_xyz(3.0, -2.0, 4.0),
+            transform: Transform::from_xyz(0.0, 0.0, 4.0),
             ..default()
         },
         RenderLayers::layer(1),
@@ -147,13 +185,13 @@ pub fn spawn_cards_system(
 
     for (index, card) in card_manager.available_cards.iter().take(max_cards).enumerate() {
         if !spawned_cards.card_ids.contains(&card.id) {
-            // 2x2 grid layout centered where camera is looking
+            // 2x2 grid layout centered at origin
             let row = index / 2;
             let col = index % 2;
 
-            // Grid centered around (3.0, -2.0) where camera is looking
-            let x_offset = 3.0 + (col as f32 - 0.5) * 0.9;
-            let y_offset = -2.0 + (0.5 - row as f32) * 1.2;
+            // Grid centered at (0, 0, 0)
+            let x_offset = (col as f32 - 0.5) * 0.9;
+            let y_offset = (0.5 - row as f32) * 1.2;
 
             let position = Vec3::new(x_offset, y_offset, 0.0);
 

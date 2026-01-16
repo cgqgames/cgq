@@ -191,6 +191,7 @@ fn ui_system(
     ui_config: Res<UiConfig>,
     card_manager: Res<CardManager>,
     card_vote_tracker: Option<Res<chat_plugin::ChatCardVoteTracker>>,
+    card_render_texture: Option<Res<card_3d::CardRenderTexture>>,
     args: Res<Args>,
     questions: Query<&Question, With<ActiveQuestion>>,
     existing_ui: Query<Entity, With<QuizUI>>,
@@ -566,6 +567,19 @@ fn ui_system(
                             ..default()
                         },
                         background_color: Color::srgba(0.4, 0.4, 0.5, 0.5).into(),
+                        ..default()
+                    });
+                }
+
+                // 3D Cards Portal - display the render texture
+                if let Some(render_tex) = card_render_texture {
+                    cards_box.spawn(ImageBundle {
+                        style: Style {
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            ..default()
+                        },
+                        image: UiImage::new(render_tex.image_handle.clone()),
                         ..default()
                     });
                 }
