@@ -22,59 +22,71 @@ fn generate_card_texture(
     let card_width = 512;
     let card_height = 716; // Roughly 63:88 aspect ratio (card proportions)
 
-    // Card type colors (matching the PDF card designs)
-    let card_color = match card.card_type {
-        CardType::Resistance => Rgba([180u8, 220u8, 180u8, 255u8]),      // Green
-        CardType::Palestinian => Rgba([220u8, 200u8, 180u8, 255u8]),    // Tan
-        CardType::Politics => Rgba([200u8, 200u8, 220u8, 255u8]),       // Blue
-        CardType::Negative => Rgba([220u8, 180u8, 180u8, 255u8]),       // Red
-        CardType::IDF => Rgba([200u8, 180u8, 200u8, 255u8]),            // Purple
-        CardType::Hasbara => Rgba([220u8, 210u8, 180u8, 255u8]),        // Light tan
-        CardType::Ceasefire => Rgba([180u8, 200u8, 220u8, 255u8]),      // Light blue
-        CardType::Other => Rgba([200u8, 200u8, 200u8, 255u8]),          // Gray
+    // Card type colors for header background (dark colors)
+    let header_bg_color = match card.card_type {
+        CardType::Resistance => Rgba([40u8, 80u8, 40u8, 255u8]),        // Dark green
+        CardType::Palestinian => Rgba([80u8, 60u8, 40u8, 255u8]),       // Dark tan
+        CardType::Politics => Rgba([40u8, 40u8, 80u8, 255u8]),          // Dark blue
+        CardType::Negative => Rgba([100u8, 30u8, 30u8, 255u8]),         // Dark red
+        CardType::IDF => Rgba([60u8, 40u8, 80u8, 255u8]),               // Dark purple
+        CardType::Hasbara => Rgba([80u8, 70u8, 50u8, 255u8]),           // Dark tan
+        CardType::Ceasefire => Rgba([40u8, 60u8, 100u8, 255u8]),        // Dark blue
+        CardType::Other => Rgba([60u8, 60u8, 60u8, 255u8]),             // Dark gray
     };
 
-    // Create base image with card type color
+    // Border color (slightly darker than header)
+    let border_color = match card.card_type {
+        CardType::Resistance => Rgba([30u8, 60u8, 30u8, 255u8]),
+        CardType::Palestinian => Rgba([60u8, 45u8, 30u8, 255u8]),
+        CardType::Politics => Rgba([30u8, 30u8, 60u8, 255u8]),
+        CardType::Negative => Rgba([80u8, 20u8, 20u8, 255u8]),
+        CardType::IDF => Rgba([45u8, 30u8, 60u8, 255u8]),
+        CardType::Hasbara => Rgba([60u8, 50u8, 35u8, 255u8]),
+        CardType::Ceasefire => Rgba([30u8, 45u8, 80u8, 255u8]),
+        CardType::Other => Rgba([45u8, 45u8, 45u8, 255u8]),
+    };
+
+    // Bright yellow/lime for description background
+    let desc_bg_color = Rgba([220u8, 240u8, 80u8, 255u8]);
+
+    // Create base image
     let mut img = RgbaImage::new(card_width, card_height);
 
-    // Fill background with card color
+    // Layout regions
+    let border = 10;
+    let header_height = 70;
+    let desc_height = 160;
+
+    let header_y = border;
+    let artwork_y = border + header_height;
+    let artwork_height = card_height - (border * 2 + header_height + desc_height);
+    let desc_y = artwork_y + artwork_height;
+
+    // Fill entire card with border color first
     draw_filled_rect_mut(
         &mut img,
         Rect::at(0, 0).of_size(card_width, card_height),
-        card_color,
+        border_color,
     );
 
-    // Layout regions
-    let border = 15;
-    let header_height = 55;
-    let desc_height = 150;
-    let inner_margin = 5;
-
-    let header_y = border;
-    let artwork_y = border + header_height + inner_margin;
-    let artwork_height = card_height - (border * 2 + header_height + desc_height + inner_margin * 2);
-    let desc_y = artwork_y + artwork_height + inner_margin;
-
-    // Draw white background for header area
+    // Draw dark background for header area
     let header_rect = Rect::at(border as i32, header_y as i32)
         .of_size(card_width - border * 2, header_height);
-    draw_filled_rect_mut(&mut img, header_rect, Rgba([255, 255, 255, 255]));
+    draw_filled_rect_mut(&mut img, header_rect, header_bg_color);
 
-    // Draw white background for description area
+    // Draw bright yellow background for description area
     let desc_rect = Rect::at(border as i32, desc_y as i32)
         .of_size(card_width - border * 2, desc_height);
-    draw_filled_rect_mut(&mut img, desc_rect, Rgba([255, 255, 255, 255]));
+    draw_filled_rect_mut(&mut img, desc_rect, desc_bg_color);
 
-    // Load and composite artwork if available (in the middle section)
+    // Load and composite character artwork in the middle section
     if let Some(path) = artwork_path {
-        // Construct full path to asset
         let full_path = format!("assets/{}", path);
 
-        // Load artwork from disk
         if let Ok(artwork_img) = image::open(&full_path) {
             let artwork_rgba = artwork_img.to_rgba8();
 
-            // Resize to fit artwork area while maintaining aspect ratio
+            // Resize artwork to fit in the middle section
             let resized = image::imageops::resize(
                 &artwork_rgba,
                 card_width - border * 2,
@@ -82,44 +94,50 @@ fn generate_card_texture(
                 image::imageops::FilterType::Lanczos3,
             );
 
-            // Place the artwork
-            let x_offset = border;
-            let y_offset = artwork_y;
-            image::imageops::overlay(&mut img, &resized, x_offset as i64, y_offset as i64);
+            // Place the artwork in the middle section
+            image::imageops::overlay(
+                &mut img,
+                &resized,
+                border as i64,
+                artwork_y as i64
+            );
         }
     }
+
+    // Text positioning
+    let header_text_y = header_y + 18;
+    let desc_text_y = desc_y + 12;
 
     // Load embedded font for text rendering
     let font_data = include_bytes!("../assets/fonts/FiraSans-Bold.ttf");
     if let Ok(font) = FontRef::try_from_slice(font_data) {
-        let text_color = Rgba([30u8, 30u8, 30u8, 255u8]);  // Dark gray
-
-        // Draw card name in header area
-        let header_scale = PxScale::from(26.0);
+        // Draw card name in header area with BLACK text
+        let header_text_color = Rgba([20u8, 20u8, 20u8, 255u8]);  // Black
+        let header_scale = PxScale::from(30.0);
         draw_text_mut(
             &mut img,
-            text_color,
+            header_text_color,
             (border + 8) as i32,
-            (header_y + 15) as i32,
+            header_text_y as i32,
             header_scale,
             &font,
             &card.name,
         );
 
-        // Draw description in bottom section
+        // Draw description text with BLACK text
         if let Some(desc) = &card.description {
-            let desc_scale = PxScale::from(15.0);
-            let text_x = (border + 8) as i32;
-            let text_y = (desc_y + 10) as i32;
+            let desc_text_color = Rgba([20u8, 20u8, 20u8, 255u8]);  // Black
+            let desc_scale = PxScale::from(16.0);
+            let text_x = (border + 10) as i32;
 
-            // Word wrap description
+            // Word wrap description to fit card width
             let wrapped = textwrap::wrap(desc, 48);
-            for (i, line) in wrapped.iter().take(6).enumerate() {
+            for (i, line) in wrapped.iter().take(8).enumerate() {
                 draw_text_mut(
                     &mut img,
-                    text_color,
+                    desc_text_color,
                     text_x,
-                    text_y + (i as i32 * 20),
+                    (desc_text_y + i as u32 * 19) as i32,
                     desc_scale,
                     &font,
                     line,
