@@ -16,22 +16,28 @@ pub fn setup_3d_cards(
     mut commands: Commands,
 ) {
     use bevy::render::view::RenderLayers;
+    use bevy::render::camera::OrthographicProjection;
 
-    // Add a 3D camera for the cards - no viewport, just layer-based rendering
-    // We'll position the cards in 3D space to appear in bottom-right
+    // Orthographic camera positioned to project cards to bottom-right
+    // Using asymmetric frustum to offset the view
     commands.spawn((
         Camera3dBundle {
             camera: Camera {
-                order: 1, // Render after the main 2D camera
-                clear_color: bevy::render::camera::ClearColorConfig::None, // Don't clear, overlay on 2D
+                order: 1,
+                clear_color: bevy::render::camera::ClearColorConfig::None,
                 ..default()
             },
-            transform: Transform::from_xyz(2.5, -1.5, 2.5)
-                .looking_at(Vec3::new(2.5, -1.5, 0.0), Vec3::Y),
+            projection: bevy::render::camera::Projection::Orthographic(OrthographicProjection {
+                scaling_mode: bevy::render::camera::ScalingMode::FixedHorizontal(8.0),
+                ..default()
+            }),
+            // Position camera to the right and down so cards appear bottom-right
+            transform: Transform::from_xyz(3.0, -2.0, 5.0)
+                .looking_at(Vec3::new(3.0, -2.0, 0.0), Vec3::Y),
             ..default()
         },
         CardsCamera,
-        RenderLayers::layer(1), // Render layer 1 for cards
+        RenderLayers::layer(1),
     ));
 
     // Add strong directional lighting for the cards
@@ -42,7 +48,7 @@ pub fn setup_3d_cards(
                 shadows_enabled: false,
                 ..default()
             },
-            transform: Transform::from_xyz(2.5, 0.0, 1.0).looking_at(Vec3::new(2.5, -1.5, 0.0), Vec3::Y),
+            transform: Transform::from_xyz(3.0, 0.0, 1.0).looking_at(Vec3::new(3.0, -2.0, 0.0), Vec3::Y),
             ..default()
         },
         RenderLayers::layer(1),
@@ -56,7 +62,7 @@ pub fn setup_3d_cards(
                 shadows_enabled: false,
                 ..default()
             },
-            transform: Transform::from_xyz(2.5, 0.0, 3.0),
+            transform: Transform::from_xyz(3.0, -2.0, 4.0),
             ..default()
         },
         RenderLayers::layer(1),
@@ -141,13 +147,13 @@ pub fn spawn_cards_system(
 
     for (index, card) in card_manager.available_cards.iter().take(max_cards).enumerate() {
         if !spawned_cards.card_ids.contains(&card.id) {
-            // 2x2 grid layout centered at origin
+            // 2x2 grid layout centered where camera is looking
             let row = index / 2;
             let col = index % 2;
 
-            // Position at bottom-right world space
-            let x_offset = 2.5 + (col as f32 - 0.5) * 0.8;
-            let y_offset = -1.5 + (0.5 - row as f32) * 1.1;
+            // Grid centered around (3.0, -2.0) where camera is looking
+            let x_offset = 3.0 + (col as f32 - 0.5) * 0.9;
+            let y_offset = -2.0 + (0.5 - row as f32) * 1.2;
 
             let position = Vec3::new(x_offset, y_offset, 0.0);
 
