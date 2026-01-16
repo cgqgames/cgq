@@ -8,6 +8,8 @@ pub mod collections;
 pub mod components;
 pub mod resources;
 pub mod cards;
+pub mod chat;
+pub mod twitch;
 
 // Re-export commonly used types
 pub use effect::{CardEffect, EffectOperation, Predicate, Value, EffectContext, EffectTiming};

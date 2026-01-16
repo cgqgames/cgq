@@ -15,6 +15,8 @@ mod game_state;
 mod effect_executor;
 mod collections;
 mod ui_config;
+mod chat;
+mod twitch;
 
 use components::*;
 use resources::*;
