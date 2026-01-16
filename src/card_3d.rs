@@ -11,34 +11,22 @@ pub struct Card3D {
     pub card_id: String,
 }
 
-/// Generate a composite card texture with text baked in at runtime
-// TODO: TECH DEBT - This function is 161 lines long (target: < 50)
-// Should be split into helper functions:
-// - create_card_background, draw_card_header, draw_card_artwork, draw_card_description
-fn generate_card_texture(
-    card: &CardDefinition,
-    artwork_path: Option<&str>,
-) -> bevy::render::texture::Image {
+/// Get colors for a card based on its type
+fn get_card_colors(card_type: &crate::components::CardType) -> (Rgba<u8>, Rgba<u8>, Rgba<u8>) {
     use crate::components::CardType;
 
-    // Card dimensions in pixels
-    let card_width = 512;
-    let card_height = 716; // Roughly 63:88 aspect ratio (card proportions)
-
-    // Card type colors for header background (dark colors)
-    let header_bg_color = match card.card_type {
-        CardType::Resistance => Rgba([40u8, 80u8, 40u8, 255u8]),        // Dark green
-        CardType::Palestinian => Rgba([80u8, 60u8, 40u8, 255u8]),       // Dark tan
-        CardType::Politics => Rgba([40u8, 40u8, 80u8, 255u8]),          // Dark blue
-        CardType::Negative => Rgba([100u8, 30u8, 30u8, 255u8]),         // Dark red
-        CardType::IDF => Rgba([60u8, 40u8, 80u8, 255u8]),               // Dark purple
-        CardType::Hasbara => Rgba([80u8, 70u8, 50u8, 255u8]),           // Dark tan
-        CardType::Ceasefire => Rgba([40u8, 60u8, 100u8, 255u8]),        // Dark blue
-        CardType::Other => Rgba([60u8, 60u8, 60u8, 255u8]),             // Dark gray
+    let header_bg_color = match card_type {
+        CardType::Resistance => Rgba([40u8, 80u8, 40u8, 255u8]),
+        CardType::Palestinian => Rgba([80u8, 60u8, 40u8, 255u8]),
+        CardType::Politics => Rgba([40u8, 40u8, 80u8, 255u8]),
+        CardType::Negative => Rgba([100u8, 30u8, 30u8, 255u8]),
+        CardType::IDF => Rgba([60u8, 40u8, 80u8, 255u8]),
+        CardType::Hasbara => Rgba([80u8, 70u8, 50u8, 255u8]),
+        CardType::Ceasefire => Rgba([40u8, 60u8, 100u8, 255u8]),
+        CardType::Other => Rgba([60u8, 60u8, 60u8, 255u8]),
     };
 
-    // Border color (slightly darker than header)
-    let border_color = match card.card_type {
+    let border_color = match card_type {
         CardType::Resistance => Rgba([30u8, 60u8, 30u8, 255u8]),
         CardType::Palestinian => Rgba([60u8, 45u8, 30u8, 255u8]),
         CardType::Politics => Rgba([30u8, 30u8, 60u8, 255u8]),
@@ -49,11 +37,54 @@ fn generate_card_texture(
         CardType::Other => Rgba([45u8, 45u8, 45u8, 255u8]),
     };
 
-    // Bright yellow/lime for description background
     let desc_bg_color = Rgba([220u8, 240u8, 80u8, 255u8]);
 
-    // Create base image
-    let mut img = RgbaImage::new(card_width, card_height);
+    (header_bg_color, border_color, desc_bg_color)
+}
+
+/// Draw the colored background regions for a card
+fn draw_card_backgrounds(
+    img: &mut RgbaImage,
+    card_width: u32,
+    card_height: u32,
+    border: u32,
+    header_height: u32,
+    desc_height: u32,
+    header_bg_color: Rgba<u8>,
+    border_color: Rgba<u8>,
+    desc_bg_color: Rgba<u8>,
+) {
+    let header_y = border;
+    let artwork_y = border + header_height;
+    let artwork_height = card_height - (border * 2 + header_height + desc_height);
+    let desc_y = artwork_y + artwork_height;
+
+    // Fill entire card with border color
+    draw_filled_rect_mut(img, Rect::at(0, 0).of_size(card_width, card_height), border_color);
+
+    // Draw dark background for header area
+    draw_filled_rect_mut(
+        img,
+        Rect::at(border as i32, header_y as i32).of_size(card_width - border * 2, header_height),
+        header_bg_color,
+    );
+
+    // Draw bright yellow background for description area
+    draw_filled_rect_mut(
+        img,
+        Rect::at(border as i32, desc_y as i32).of_size(card_width - border * 2, desc_height),
+        desc_bg_color,
+    );
+}
+
+/// Generate a composite card texture with text baked in at runtime
+fn generate_card_texture(
+    card: &CardDefinition,
+    artwork_path: Option<&str>,
+) -> bevy::render::texture::Image {
+    // Card dimensions in pixels
+    let card_width = 512;
+    let card_height = 716;
 
     // Layout regions
     let border = 10;
@@ -65,22 +96,22 @@ fn generate_card_texture(
     let artwork_height = card_height - (border * 2 + header_height + desc_height);
     let desc_y = artwork_y + artwork_height;
 
-    // Fill entire card with border color first
-    draw_filled_rect_mut(
+    // Get colors for this card type
+    let (header_bg_color, border_color, desc_bg_color) = get_card_colors(&card.card_type);
+
+    // Create base image and draw backgrounds
+    let mut img = RgbaImage::new(card_width, card_height);
+    draw_card_backgrounds(
         &mut img,
-        Rect::at(0, 0).of_size(card_width, card_height),
+        card_width,
+        card_height,
+        border,
+        header_height,
+        desc_height,
+        header_bg_color,
         border_color,
+        desc_bg_color,
     );
-
-    // Draw dark background for header area
-    let header_rect = Rect::at(border as i32, header_y as i32)
-        .of_size(card_width - border * 2, header_height);
-    draw_filled_rect_mut(&mut img, header_rect, header_bg_color);
-
-    // Draw bright yellow background for description area
-    let desc_rect = Rect::at(border as i32, desc_y as i32)
-        .of_size(card_width - border * 2, desc_height);
-    draw_filled_rect_mut(&mut img, desc_rect, desc_bg_color);
 
     // Load and composite character artwork in the middle section
     if let Some(path) = artwork_path {
