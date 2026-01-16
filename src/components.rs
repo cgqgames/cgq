@@ -52,6 +52,10 @@ pub enum CardType {
     Palestinian,
     Politics,
     Negative,
+    IDF,
+    Hasbara,
+    Ceasefire,
+    Other,
 }
 
 /// Card effect components - each card effect type is its own component

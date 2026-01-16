@@ -569,16 +569,92 @@ fn ui_system(
                     });
                 }
 
-                // 3D Cards Portal - display the render texture
+                // 3D Cards Portal - display the render texture with text overlays
                 if let Some(render_tex) = card_render_texture {
-                    cards_box.spawn(ImageBundle {
+                    cards_box.spawn(NodeBundle {
                         style: Style {
                             width: Val::Percent(100.0),
                             height: Val::Percent(100.0),
+                            position_type: bevy::ui::PositionType::Relative,
                             ..default()
                         },
-                        image: UiImage::new(render_tex.image_handle.clone()),
                         ..default()
+                    }).with_children(|portal| {
+                        // Background image
+                        portal.spawn(ImageBundle {
+                            style: Style {
+                                width: Val::Percent(100.0),
+                                height: Val::Percent(100.0),
+                                position_type: bevy::ui::PositionType::Absolute,
+                                ..default()
+                            },
+                            image: UiImage::new(render_tex.image_handle.clone()),
+                            ..default()
+                        });
+
+                        // Text overlays for each card in 2x2 grid
+                        // Positions based on 3D card layout mapped to UI space
+                        // Adjusted for overlay size (35% wide, 45% tall) to center on cards
+                        let card_positions = [
+                            (13.75, 2.5),   // Top-left (index 0)
+                            (51.25, 2.5),   // Top-right (index 1)
+                            (13.75, 52.5),  // Bottom-left (index 2)
+                            (51.25, 52.5),  // Bottom-right (index 3)
+                        ];
+
+                        for (index, card) in card_manager.available_cards.iter().take(4).enumerate() {
+                            let (left_pct, top_pct) = card_positions[index];
+
+                            portal.spawn(NodeBundle {
+                                style: Style {
+                                    position_type: bevy::ui::PositionType::Absolute,
+                                    left: Val::Percent(left_pct),
+                                    top: Val::Percent(top_pct),
+                                    width: Val::Percent(35.0),  // Card width in UI space
+                                    height: Val::Percent(45.0), // Card height in UI space
+                                    flex_direction: FlexDirection::Column,
+                                    justify_content: JustifyContent::FlexStart,
+                                    align_items: AlignItems::Center,
+                                    padding: UiRect::all(Val::Px(4.0)),
+                                    ..default()
+                                },
+                                // Semi-transparent background for text readability
+                                background_color: Color::srgba(0.0, 0.0, 0.0, 0.6).into(),
+                                ..default()
+                            }).with_children(|card_overlay| {
+                                // Card name
+                                card_overlay.spawn(TextBundle {
+                                    text: Text::from_section(
+                                        &card.name,
+                                        TextStyle {
+                                            font_size: 12.0,
+                                            color: Color::srgb(1.0, 1.0, 1.0),
+                                            ..default()
+                                        },
+                                    ),
+                                    style: Style {
+                                        margin: UiRect::bottom(Val::Px(2.0)),
+                                        ..default()
+                                    },
+                                    ..default()
+                                });
+
+                                // Card description
+                                if let Some(desc) = &card.description {
+                                    card_overlay.spawn(TextBundle {
+                                        text: Text::from_section(
+                                            desc,
+                                            TextStyle {
+                                                font_size: 9.0,
+                                                color: Color::srgb(0.9, 0.9, 0.9),
+                                                ..default()
+                                            },
+                                        ),
+                                        ..default()
+                                    });
+                                }
+                            });
+                        }
                     });
                 }
             });

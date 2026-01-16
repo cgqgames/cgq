@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bevy::log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -74,19 +75,27 @@ impl CardSet {
 pub async fn load_all_cards() -> Result<Vec<CardDefinition>> {
     let mut all_cards = Vec::new();
 
-    // Load resistance cards
-    if let Ok(resistance) = CardSet::from_file("content/palestinian-quiz/cards/resistance.yml").await {
-        all_cards.extend(resistance.cards.into_iter().map(card_to_definition));
-    }
+    let card_files = vec![
+        "content/palestinian-quiz/cards/resistance.yml",
+        "content/palestinian-quiz/cards/palestinian.yml",
+        "content/palestinian-quiz/cards/idf.yml",
+        "content/palestinian-quiz/cards/politics.yml",
+        "content/palestinian-quiz/cards/hasbara.yml",
+        "content/palestinian-quiz/cards/ceasefire.yml",
+        "content/palestinian-quiz/cards/other.yml",
+    ];
 
-    // Load palestinian cards
-    if let Ok(palestinian) = CardSet::from_file("content/palestinian-quiz/cards/palestinian.yml").await {
-        all_cards.extend(palestinian.cards.into_iter().map(card_to_definition));
-    }
-
-    // Load negative cards
-    if let Ok(negative) = CardSet::from_file("content/palestinian-quiz/cards/negative.yml").await {
-        all_cards.extend(negative.cards.into_iter().map(card_to_definition));
+    for file_path in card_files {
+        match CardSet::from_file(file_path).await {
+            Ok(card_set) => {
+                let count = card_set.cards.len();
+                all_cards.extend(card_set.cards.into_iter().map(card_to_definition));
+                info!("Loaded {} cards from {}", count, file_path);
+            }
+            Err(e) => {
+                warn!("Failed to load cards from {}: {}", file_path, e);
+            }
+        }
     }
 
     Ok(all_cards)
@@ -94,6 +103,18 @@ pub async fn load_all_cards() -> Result<Vec<CardDefinition>> {
 
 fn card_to_definition(card: Card) -> CardDefinition {
     use crate::resources::CardEffectDefinition;
+
+    // Prefer clean backgrounds (without text) if available
+    let image_path = card.visual.image.map(|img| {
+        // Try background version first (based on card ID)
+        let bg_path = format!("cards-backgrounds/{}.png", card.id);
+        let full_path = format!("cards/{}", img);
+
+        // Check if background exists by trying both paths
+        // AssetServer will handle the actual file existence check
+        // For now, always try background first
+        bg_path
+    });
 
     CardDefinition {
         id: card.id,
@@ -107,7 +128,7 @@ fn card_to_definition(card: Card) -> CardDefinition {
             priority: e.priority,
             parameters: e.parameters,
         }).collect(),
-        image_path: card.visual.image.map(|img| format!("cards/{}", img)),
+        image_path,
     }
 }
 

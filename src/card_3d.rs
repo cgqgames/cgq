@@ -122,12 +122,40 @@ pub fn spawn_card_3d(
     card: &CardDefinition,
     position: Vec3,
 ) {
-    // Create a thin card mesh (like a playing card)
-    let card_mesh = meshes.add(Cuboid::new(
-        0.63,  // Width (standard playing card ratio)
-        0.88,  // Height
-        0.01,  // Thickness (very thin like paper)
-    ));
+    use bevy::render::mesh::{Indices, PrimitiveTopology};
+    use bevy::render::render_asset::RenderAssetUsages;
+
+    // Create a custom quad mesh with flipped UVs for the card
+    let width = 0.72;   // 0.63 * 1.15
+    let height = 1.01;  // 0.88 * 1.15
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+
+    // Vertices for a quad facing +Z
+    let vertices = vec![
+        [-width/2.0, -height/2.0, 0.0],  // Bottom-left
+        [width/2.0, -height/2.0, 0.0],   // Bottom-right
+        [width/2.0, height/2.0, 0.0],    // Top-right
+        [-width/2.0, height/2.0, 0.0],   // Top-left
+    ];
+
+    // Flipped UVs (flip Y: 0->1, 1->0 to flip vertically)
+    let uvs = vec![
+        [0.0, 1.0],  // Bottom-left
+        [1.0, 1.0],  // Bottom-right
+        [1.0, 0.0],  // Top-right
+        [0.0, 0.0],  // Top-left
+    ];
+
+    let normals = vec![[0.0, 0.0, 1.0]; 4];
+    let indices = vec![0, 1, 2, 0, 2, 3];
+
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_indices(Indices::U32(indices));
+
+    let card_mesh = meshes.add(mesh);
 
     // Load texture from extracted card artwork
     let texture_handle = card.image_path.as_ref()
@@ -137,7 +165,7 @@ pub fn spawn_card_3d(
     let material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
         base_color_texture: texture_handle,
-        emissive: Color::srgb(0.4, 0.4, 0.4).into(), // Emissive for visibility
+        emissive: Color::srgb(0.0, 0.0, 0.0).into(), // No emissive to reduce saturation
         perceptual_roughness: 0.8,
         metallic: 0.0,
         reflectance: 0.2,
@@ -146,12 +174,16 @@ pub fn spawn_card_3d(
     });
 
     use bevy::render::view::RenderLayers;
+    use std::f32::consts::PI;
+
+    // No rotation needed - custom UVs handle orientation
+    let transform = Transform::from_translation(position);
 
     commands.spawn((
         PbrBundle {
             mesh: card_mesh,
             material,
-            transform: Transform::from_translation(position),
+            transform,
             ..default()
         },
         Card3D {
@@ -185,9 +217,9 @@ pub fn spawn_cards_system(
             let row = index / 2;
             let col = index % 2;
 
-            // Grid centered at (0, 0, 0)
-            let x_offset = (col as f32 - 0.5) * 0.9;
-            let y_offset = (0.5 - row as f32) * 1.2;
+            // Grid centered at (0, 0, 0) - closer spacing
+            let x_offset = (col as f32 - 0.5) * 0.75;
+            let y_offset = (0.5 - row as f32) * 1.0;
 
             let position = Vec3::new(x_offset, y_offset, 0.0);
 
