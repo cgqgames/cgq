@@ -125,30 +125,81 @@ pub fn spawn_card_3d(
     use bevy::render::mesh::{Indices, PrimitiveTopology};
     use bevy::render::render_asset::RenderAssetUsages;
 
-    // Create a custom quad mesh with flipped UVs for the card
+    // Create a thin 3D card mesh (for flip animations and back texturing)
     let width = 0.72;   // 0.63 * 1.15
     let height = 1.01;  // 0.88 * 1.15
+    let thickness = 0.02;  // Thin like a real card
 
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
 
-    // Vertices for a quad facing +Z
+    let hw = width / 2.0;
+    let hh = height / 2.0;
+    let ht = thickness / 2.0;
+
+    // 24 vertices (4 per face, 6 faces) for proper normals and UVs
     let vertices = vec![
-        [-width/2.0, -height/2.0, 0.0],  // Bottom-left
-        [width/2.0, -height/2.0, 0.0],   // Bottom-right
-        [width/2.0, height/2.0, 0.0],    // Top-right
-        [-width/2.0, height/2.0, 0.0],   // Top-left
+        // Front face (facing +Z) - 0-3
+        [-hw, -hh,  ht], [hw, -hh,  ht], [hw,  hh,  ht], [-hw,  hh,  ht],
+        // Back face (facing -Z) - 4-7
+        [hw, -hh, -ht], [-hw, -hh, -ht], [-hw,  hh, -ht], [hw,  hh, -ht],
+        // Top edge (facing +Y) - 8-11
+        [-hw,  hh,  ht], [hw,  hh,  ht], [hw,  hh, -ht], [-hw,  hh, -ht],
+        // Bottom edge (facing -Y) - 12-15
+        [-hw, -hh, -ht], [hw, -hh, -ht], [hw, -hh,  ht], [-hw, -hh,  ht],
+        // Right edge (facing +X) - 16-19
+        [hw, -hh,  ht], [hw, -hh, -ht], [hw,  hh, -ht], [hw,  hh,  ht],
+        // Left edge (facing -X) - 20-23
+        [-hw, -hh, -ht], [-hw, -hh,  ht], [-hw,  hh,  ht], [-hw,  hh, -ht],
     ];
 
-    // Flipped UVs (flip Y: 0->1, 1->0 to flip vertically)
+    // UVs - front face gets card texture, others get edge UVs
     let uvs = vec![
-        [0.0, 1.0],  // Bottom-left
-        [1.0, 1.0],  // Bottom-right
-        [1.0, 0.0],  // Top-right
-        [0.0, 0.0],  // Top-left
+        // Front face - flipped vertically for correct orientation
+        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
+        // Back face - flipped for back texture (will add later)
+        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
+        // Top edge
+        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+        // Bottom edge
+        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+        // Right edge
+        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+        // Left edge
+        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
     ];
 
-    let normals = vec![[0.0, 0.0, 1.0]; 4];
-    let indices = vec![0, 1, 2, 0, 2, 3];
+    // Normals for each face
+    let normals = vec![
+        // Front face
+        [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0],
+        // Back face
+        [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0],
+        // Top edge
+        [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0],
+        // Bottom edge
+        [0.0, -1.0, 0.0], [0.0, -1.0, 0.0], [0.0, -1.0, 0.0], [0.0, -1.0, 0.0],
+        // Right edge
+        [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0],
+        // Left edge
+        [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0],
+    ];
+
+    // Triangle indices for all 6 faces
+    #[rustfmt::skip]
+    let indices = vec![
+        // Front face
+        0, 1, 2,  0, 2, 3,
+        // Back face
+        4, 5, 6,  4, 6, 7,
+        // Top edge
+        8, 9, 10,  8, 10, 11,
+        // Bottom edge
+        12, 13, 14,  12, 14, 15,
+        // Right edge
+        16, 17, 18,  16, 18, 19,
+        // Left edge
+        20, 21, 22,  20, 22, 23,
+    ];
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -174,7 +225,6 @@ pub fn spawn_card_3d(
     });
 
     use bevy::render::view::RenderLayers;
-    use std::f32::consts::PI;
 
     // No rotation needed - custom UVs handle orientation
     let transform = Transform::from_translation(position);
