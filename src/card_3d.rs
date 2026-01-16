@@ -18,7 +18,7 @@ pub fn setup_3d_cards(
     use bevy::render::view::RenderLayers;
 
     // Add a 3D camera for the cards
-    // Position it to look at cards in 3D space
+    // Using a wide FOV perspective to position cards in bottom-right
     commands.spawn((
         Camera3dBundle {
             camera: Camera {
@@ -26,32 +26,38 @@ pub fn setup_3d_cards(
                 clear_color: bevy::render::camera::ClearColorConfig::None, // Don't clear, overlay on 2D
                 ..default()
             },
-            transform: Transform::from_xyz(0.0, 0.5, 4.0)
-                .looking_at(Vec3::new(0.0, -0.5, 0.0), Vec3::Y),
+            projection: bevy::render::camera::Projection::Perspective(bevy::render::camera::PerspectiveProjection {
+                fov: std::f32::consts::PI / 3.0, // 60 degrees
+                aspect_ratio: 16.0 / 9.0,
+                near: 0.1,
+                far: 100.0,
+            }),
+            transform: Transform::from_xyz(3.0, -2.0, 3.5)
+                .looking_at(Vec3::new(3.0, -2.0, 0.0), Vec3::Y),
             ..default()
         },
         CardsCamera,
         RenderLayers::layer(1), // Render layer 1 for cards
     ));
 
-    // Add lighting for the cards
+    // Add lighting for the cards (positioned near the card area)
     commands.spawn((
         PointLightBundle {
             point_light: PointLight {
-                intensity: 2000.0,
-                shadows_enabled: true,
+                intensity: 3000.0,
+                shadows_enabled: false, // Disable shadows for better performance
                 ..default()
             },
-            transform: Transform::from_xyz(0.0, 4.0, 4.0),
+            transform: Transform::from_xyz(3.0, 0.0, 4.0),
             ..default()
         },
         RenderLayers::layer(1), // Illuminate cards on layer 1
     ));
 
-    // Ambient light
+    // Ambient light for overall illumination
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
-        brightness: 0.3,
+        brightness: 0.5,
     });
 }
 
@@ -119,12 +125,18 @@ pub fn spawn_cards_system(
     card_manager: Res<crate::resources::CardManager>,
     mut spawned_cards: ResMut<SpawnedCards>,
 ) {
-    // Check if there are new cards to spawn
-    for (index, card) in card_manager.available_cards.iter().enumerate() {
+    // Only show first 4 cards in a 2x2 grid
+    let max_cards = 4;
+
+    for (index, card) in card_manager.available_cards.iter().take(max_cards).enumerate() {
         if !spawned_cards.card_ids.contains(&card.id) {
-            // Calculate position in a grid layout
-            let x_offset = (index % 3) as f32 * 0.8 - 0.8; // 3 cards per row
-            let y_offset = -((index / 3) as f32 * 1.0);
+            // 2x2 grid layout positioned for bottom-right corner
+            let row = index / 2;
+            let col = index % 2;
+
+            // Position cards at (3, -2, 0) area (where camera is looking)
+            let x_offset = 3.0 + (col as f32 - 0.5) * 0.7; // Tighter spacing
+            let y_offset = -2.0 + (0.5 - row as f32) * 1.0;
 
             let position = Vec3::new(x_offset, y_offset, 0.0);
 
