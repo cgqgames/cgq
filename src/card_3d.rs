@@ -17,8 +17,8 @@ pub fn setup_3d_cards(
 ) {
     use bevy::render::view::RenderLayers;
 
-    // Add a 3D camera for the cards
-    // Using a wide FOV perspective to position cards in bottom-right
+    // Add a 3D camera for the cards - no viewport, just layer-based rendering
+    // We'll position the cards in 3D space to appear in bottom-right
     commands.spawn((
         Camera3dBundle {
             camera: Camera {
@@ -26,38 +26,46 @@ pub fn setup_3d_cards(
                 clear_color: bevy::render::camera::ClearColorConfig::None, // Don't clear, overlay on 2D
                 ..default()
             },
-            projection: bevy::render::camera::Projection::Perspective(bevy::render::camera::PerspectiveProjection {
-                fov: std::f32::consts::PI / 3.0, // 60 degrees
-                aspect_ratio: 16.0 / 9.0,
-                near: 0.1,
-                far: 100.0,
-            }),
-            transform: Transform::from_xyz(3.0, -2.0, 3.5)
-                .looking_at(Vec3::new(3.0, -2.0, 0.0), Vec3::Y),
+            transform: Transform::from_xyz(2.5, -1.5, 2.5)
+                .looking_at(Vec3::new(2.5, -1.5, 0.0), Vec3::Y),
             ..default()
         },
         CardsCamera,
         RenderLayers::layer(1), // Render layer 1 for cards
     ));
 
-    // Add lighting for the cards (positioned near the card area)
+    // Add strong directional lighting for the cards
+    commands.spawn((
+        DirectionalLightBundle {
+            directional_light: DirectionalLight {
+                illuminance: 10000.0,
+                shadows_enabled: false,
+                ..default()
+            },
+            transform: Transform::from_xyz(2.5, 0.0, 1.0).looking_at(Vec3::new(2.5, -1.5, 0.0), Vec3::Y),
+            ..default()
+        },
+        RenderLayers::layer(1),
+    ));
+
+    // Additional point light for extra brightness
     commands.spawn((
         PointLightBundle {
             point_light: PointLight {
-                intensity: 3000.0,
-                shadows_enabled: false, // Disable shadows for better performance
+                intensity: 8000.0,
+                shadows_enabled: false,
                 ..default()
             },
-            transform: Transform::from_xyz(3.0, 0.0, 4.0),
+            transform: Transform::from_xyz(2.5, 0.0, 3.0),
             ..default()
         },
-        RenderLayers::layer(1), // Illuminate cards on layer 1
+        RenderLayers::layer(1),
     ));
 
-    // Ambient light for overall illumination
+    // Strong ambient light
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
-        brightness: 0.5,
+        brightness: 1.0,
     });
 }
 
@@ -84,13 +92,16 @@ pub fn spawn_card_3d(
         None
     };
 
-    // Create PBR material for paper-like appearance
+    // Create PBR material for paper-like appearance with emissive lighting
     let material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.95, 0.95, 0.98), // Slight off-white for paper
-        base_color_texture: texture_handle,
+        base_color: Color::WHITE,
+        base_color_texture: texture_handle.clone(),
+        emissive: Color::srgb(0.5, 0.5, 0.5).into(), // Make cards emit light so they're visible
+        emissive_texture: texture_handle, // Use the same texture for emissive
         perceptual_roughness: 0.8, // Paper is fairly rough
         metallic: 0.0,              // Paper is not metallic
         reflectance: 0.1,           // Very low reflectance
+        unlit: false,
         ..default()
     });
 
@@ -130,13 +141,13 @@ pub fn spawn_cards_system(
 
     for (index, card) in card_manager.available_cards.iter().take(max_cards).enumerate() {
         if !spawned_cards.card_ids.contains(&card.id) {
-            // 2x2 grid layout positioned for bottom-right corner
+            // 2x2 grid layout centered at origin
             let row = index / 2;
             let col = index % 2;
 
-            // Position cards at (3, -2, 0) area (where camera is looking)
-            let x_offset = 3.0 + (col as f32 - 0.5) * 0.7; // Tighter spacing
-            let y_offset = -2.0 + (0.5 - row as f32) * 1.0;
+            // Position at bottom-right world space
+            let x_offset = 2.5 + (col as f32 - 0.5) * 0.8;
+            let y_offset = -1.5 + (0.5 - row as f32) * 1.1;
 
             let position = Vec3::new(x_offset, y_offset, 0.0);
 
