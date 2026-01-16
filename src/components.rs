@@ -11,6 +11,8 @@ pub struct Question {
     pub explanation: Option<String>,
     pub source: Option<String>,
     pub tags: Vec<String>,
+    #[serde(skip, default)]
+    pub question_index: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

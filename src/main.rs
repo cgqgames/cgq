@@ -1,7 +1,7 @@
 use bevy::{
     prelude::*,
-    ui::{node_bundles::*, Style, Val, UiRect, FlexDirection, JustifyContent, AlignItems},
-    text::{Text, TextStyle, TextSection},
+    ui::{Style, Val, UiRect, FlexDirection, JustifyContent, AlignItems},
+    text::{Text, TextStyle},
 };
 use clap::Parser;
 use std::path::PathBuf;
@@ -14,12 +14,14 @@ mod effect;
 mod game_state;
 mod effect_executor;
 mod collections;
+mod ui_config;
 
 use components::*;
 use resources::*;
 use systems::*;
 use game_state::GameState;
 use collections::CollectionManager;
+use ui_config::UiConfig;
 
 #[derive(Parser, Debug, Resource, Clone)]
 #[command(name = "cgq")]
@@ -32,10 +34,33 @@ struct Args {
     /// Path to cards directory (optional)
     #[arg(short, long)]
     cards: Option<PathBuf>,
+
+    /// Path to UI config TOML file (optional, uses built-in defaults if not provided)
+    #[arg(short = 'u', long)]
+    ui_config: Option<PathBuf>,
 }
 
 fn main() {
     let args = Args::parse();
+
+    // Load UI config (use defaults if not provided)
+    let ui_config = if let Some(ref config_path) = args.ui_config {
+        match UiConfig::from_file(config_path) {
+            Ok(config) => {
+                info!("Loaded UI config from {:?}", config_path);
+                config
+            }
+            Err(e) => {
+                warn!("Failed to load UI config from {:?}: {}. Using built-in defaults.", config_path, e);
+                UiConfig::default()
+            }
+        }
+    } else {
+        info!("No UI config provided, using built-in defaults");
+        UiConfig::default()
+    };
+
+    let background_color = ui_config.background_color();
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -46,8 +71,10 @@ fn main() {
             }),
             ..default()
         }))
+        .insert_resource(ClearColor(background_color))
         // Resources
         .insert_resource(args)
+        .insert_resource(ui_config)
         .init_resource::<QuizState>()
         .init_resource::<GameTimer>()
         .init_resource::<Score>()
@@ -83,7 +110,8 @@ fn load_quiz(
     info!("Loaded {} questions from {:?}", question_set.questions.len(), args.quiz);
 
     // Spawn all question entities
-    for (index, question) in question_set.questions.into_iter().enumerate() {
+    for (index, mut question) in question_set.questions.into_iter().enumerate() {
+        question.question_index = index;
         let mut entity = commands.spawn(question);
 
         // Mark the first question as active
@@ -105,6 +133,7 @@ fn ui_system(
     quiz_state: Res<QuizState>,
     score: Res<Score>,
     timer: Res<GameTimer>,
+    ui_config: Res<UiConfig>,
     questions: Query<&Question, With<ActiveQuestion>>,
     existing_ui: Query<Entity, With<QuizUI>>,
 ) {
@@ -249,64 +278,134 @@ fn ui_system(
     }
 
     if let Ok(question) = questions.get_single() {
-        // Root UI container
+        // Root container (transparent background)
         commands.spawn((
             NodeBundle {
                 style: Style {
                     width: Val::Percent(100.0),
                     height: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    padding: UiRect::all(Val::Px(40.0)),
                     ..default()
                 },
-                background_color: Color::srgb(0.1, 0.1, 0.15).into(),
                 ..default()
             },
             QuizUI,
         ))
         .with_children(|parent| {
-            // Header: Timer and Score
+            // Question box (top-left)
+            let qbox = &ui_config.question_box;
             parent.spawn(NodeBundle {
                 style: Style {
-                    width: Val::Percent(100.0),
-                    justify_content: JustifyContent::SpaceBetween,
-                    margin: UiRect::bottom(Val::Px(40.0)),
+                    position_type: bevy::ui::PositionType::Absolute,
+                    left: Val::Px(qbox.left),
+                    top: Val::Px(qbox.top),
+                    width: Val::Px(qbox.width),
+                    padding: UiRect::all(Val::Px(20.0)),
+                    flex_direction: FlexDirection::Column,
                     ..default()
                 },
+                background_color: ui_config.question_box_background().into(),
                 ..default()
-            }).with_children(|header| {
-                header.spawn(TextBundle {
+            }).with_children(|question_box| {
+                // Question header
+                question_box.spawn(TextBundle {
                     text: Text::from_section(
-                        format!("Time: {:.0}s", timer.timer.remaining_secs()),
+                        format!("QUESTION #{}", quiz_state.current_question_index + 1),
                         TextStyle {
-                            font_size: 40.0,
-                            color: Color::WHITE,
+                            font_size: qbox.header_font_size,
+                            color: ui_config.accent_color(),
                             ..default()
                         },
                     ),
+                    style: Style {
+                        margin: UiRect::bottom(Val::Px(15.0)),
+                        ..default()
+                    },
                     ..default()
                 });
 
-                header.spawn(TextBundle {
+                // Question text
+                question_box.spawn(TextBundle {
                     text: Text::from_section(
-                        format!("Score: {} / {}", score.current, score.passing_grade),
+                        &question.text,
                         TextStyle {
-                            font_size: 40.0,
-                            color: Color::WHITE,
+                            font_size: qbox.font_size,
+                            color: ui_config.text_primary_color(),
                             ..default()
                         },
                     ),
+                    style: Style {
+                        margin: UiRect::bottom(Val::Px(20.0)),
+                        ..default()
+                    },
                     ..default()
                 });
 
-                header.spawn(TextBundle {
+                // Options
+                for option in &question.options {
+                    question_box.spawn(TextBundle {
+                        text: Text::from_section(
+                            format!("{}) {}", option.id.to_uppercase(), option.text),
+                            TextStyle {
+                                font_size: qbox.option_font_size,
+                                color: ui_config.text_secondary_color(),
+                                ..default()
+                            },
+                        ),
+                        style: Style {
+                            margin: UiRect::all(Val::Px(5.0)),
+                            ..default()
+                        },
+                        ..default()
+                    });
+                }
+            });
+
+            // Timer and status bar (bottom-left)
+            let tbox = &ui_config.timer_box;
+            parent.spawn(NodeBundle {
+                style: Style {
+                    position_type: bevy::ui::PositionType::Absolute,
+                    left: Val::Px(tbox.left),
+                    bottom: Val::Px(tbox.bottom),
+                    flex_direction: FlexDirection::Column,
+                    padding: UiRect::all(Val::Px(15.0)),
+                    ..default()
+                },
+                background_color: ui_config.timer_box_background().into(),
+                ..default()
+            }).with_children(|timer_box| {
+                // Timer display
+                let mins = (timer.timer.remaining_secs() / 60.0) as i32;
+                let secs = (timer.timer.remaining_secs() % 60.0) as i32;
+                timer_box.spawn(TextBundle {
                     text: Text::from_section(
-                        format!("Question {} / {}", quiz_state.current_question_index + 1, quiz_state.total_questions),
+                        format!("{:02}:{:02}", mins, secs),
                         TextStyle {
-                            font_size: 40.0,
-                            color: Color::WHITE,
+                            font_size: tbox.timer_font_size,
+                            color: ui_config.timer_color(),
+                            ..default()
+                        },
+                    ),
+                    style: Style {
+                        margin: UiRect::bottom(Val::Px(10.0)),
+                        ..default()
+                    },
+                    ..default()
+                });
+
+                // Status bar
+                timer_box.spawn(TextBundle {
+                    text: Text::from_section(
+                        format!(
+                            "Palestine Quiz | Time: {}min | Passing Grade: {} | Questions Answered: {} | Current Grade: {}",
+                            (timer.timer.duration().as_secs() / 60),
+                            score.passing_grade,
+                            score.total_answered,
+                            score.current
+                        ),
+                        TextStyle {
+                            font_size: tbox.status_font_size,
+                            color: ui_config.timer_color(),
                             ..default()
                         },
                     ),
@@ -314,45 +413,33 @@ fn ui_system(
                 });
             });
 
-            // Question text
-            parent.spawn((
-                TextBundle {
+            // Cards placeholder (bottom-right)
+            let cbox = &ui_config.cards_grid;
+            parent.spawn(NodeBundle {
+                style: Style {
+                    position_type: bevy::ui::PositionType::Absolute,
+                    right: Val::Px(cbox.right),
+                    bottom: Val::Px(cbox.bottom),
+                    width: Val::Px(cbox.width),
+                    height: Val::Px(cbox.height),
+                    padding: UiRect::all(Val::Px(15.0)),
+                    ..default()
+                },
+                background_color: ui_config.cards_grid_background().into(),
+                ..default()
+            }).with_children(|cards_box| {
+                cards_box.spawn(TextBundle {
                     text: Text::from_section(
-                        &question.text,
+                        "CARDS\n(Coming Soon)",
                         TextStyle {
-                            font_size: 50.0,
-                            color: Color::WHITE,
+                            font_size: 24.0,
+                            color: Color::srgb(0.5, 0.5, 0.6),
                             ..default()
                         },
                     ),
-                    style: Style {
-                        margin: UiRect::bottom(Val::Px(40.0)),
-                        ..default()
-                    },
                     ..default()
-                },
-            ));
-
-            // Options
-            for option in &question.options {
-                parent.spawn((
-                    TextBundle {
-                        text: Text::from_section(
-                            format!("{}) {}", option.id.to_uppercase(), option.text),
-                            TextStyle {
-                                font_size: 36.0,
-                                color: Color::srgb(0.8, 0.8, 0.9),
-                                ..default()
-                            },
-                        ),
-                        style: Style {
-                            margin: UiRect::all(Val::Px(10.0)),
-                            ..default()
-                        },
-                        ..default()
-                    },
-                ));
-            }
+                });
+            });
         });
     }
 }

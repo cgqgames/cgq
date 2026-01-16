@@ -20,11 +20,12 @@ pub fn quiz_system(
             commands.entity(entity).remove::<ActiveQuestion>();
         }
 
-        // Add ActiveQuestion to the current index
-        let mut questions_vec: Vec<_> = all_questions.iter().collect();
-
-        if let Some((entity, _)) = questions_vec.get(quiz_state.current_question_index) {
-            commands.entity(*entity).insert(ActiveQuestion);
+        // Find the question with matching question_index
+        for (entity, question) in all_questions.iter() {
+            if question.question_index == quiz_state.current_question_index {
+                commands.entity(entity).insert(ActiveQuestion);
+                break;
+            }
         }
     }
 }
@@ -136,22 +137,16 @@ pub fn input_system(
 
                 score.total_answered += 1;
 
-                // Signal to move to next question
-                quiz_state.paused = true;
-            }
-        }
+                // Auto-advance to next question
+                quiz_state.current_question_index += 1;
 
-        // Next question with N key
-        if keyboard.just_pressed(KeyCode::KeyN) {
-            quiz_state.current_question_index += 1;
-            quiz_state.paused = false;
-
-            if quiz_state.current_question_index >= quiz_state.total_questions {
-                quiz_state.game_complete = true;
-                info!("🏁 Quiz complete! Final score: {} / {}", score.current, score.passing_grade);
-                info!("Correct: {} / {}", score.correct_answers, score.total_answered);
-            } else {
-                info!("Moving to question {}", quiz_state.current_question_index + 1);
+                if quiz_state.current_question_index >= quiz_state.total_questions {
+                    quiz_state.game_complete = true;
+                    info!("🏁 Quiz complete! Final score: {} / {}", score.current, score.passing_grade);
+                    info!("Correct: {} / {}", score.correct_answers, score.total_answered);
+                } else {
+                    info!("Moving to question {}", quiz_state.current_question_index + 1);
+                }
             }
         }
     }

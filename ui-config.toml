@@ -1,0 +1,49 @@
+# CGQ UI Configuration
+# Customize the appearance and layout of the game interface
+
+[layout]
+preset = "stream-overlay"  # Options: "stream-overlay", "fullscreen", "minimal"
+
+[question_box]
+# Position (top-left corner)
+left = 20.0
+top = 20.0
+width = 650.0
+
+# Font sizes
+font_size = 20.0
+header_font_size = 24.0
+option_font_size = 18.0
+
+# Transparency
+background_alpha = 0.95
+
+[timer_box]
+# Position (bottom-left corner)
+left = 20.0
+bottom = 20.0
+
+# Font sizes
+timer_font_size = 60.0
+status_font_size = 16.0
+
+# Transparency
+background_alpha = 0.95
+
+[cards_grid]
+# Position (bottom-right corner)
+right = 20.0
+bottom = 20.0
+width = 500.0
+height = 400.0
+
+# Transparency
+background_alpha = 0.8
+
+[colors]
+# RGB values (0.0 - 1.0)
+background = [0.08, 0.05, 0.12]  # Dark purple
+accent = [0.3, 0.9, 0.8]          # Cyan/teal
+timer = [0.2, 0.9, 0.9]           # Bright cyan
+text_primary = [1.0, 1.0, 1.0]    # White
+text_secondary = [0.9, 0.9, 0.95] # Light gray
