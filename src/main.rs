@@ -489,7 +489,7 @@ fn ui_system(
                     height: Val::Px(cbox.height),
                     padding: UiRect::all(Val::Px(15.0)),
                     flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(10.0),
+                    row_gap: Val::Px(8.0),
                     ..default()
                 },
                 background_color: ui_config.cards_grid_background().into(),
@@ -527,108 +527,209 @@ fn ui_system(
                     });
                 } else {
                     for card in &card_manager.available_cards {
+                        // Determine card colors based on type
+                        let (type_color, type_bg, card_border) = match card.card_type {
+                            CardType::Resistance => (
+                                Color::srgb(1.0, 0.9, 0.9),
+                                Color::srgb(0.6, 0.1, 0.1),
+                                Color::srgb(0.9, 0.3, 0.3),
+                            ),
+                            CardType::Palestinian => (
+                                Color::srgb(0.9, 1.0, 0.9),
+                                Color::srgb(0.1, 0.5, 0.1),
+                                Color::srgb(0.3, 0.9, 0.3),
+                            ),
+                            CardType::Politics => (
+                                Color::srgb(0.9, 0.95, 1.0),
+                                Color::srgb(0.1, 0.3, 0.6),
+                                Color::srgb(0.4, 0.6, 1.0),
+                            ),
+                            CardType::Negative => (
+                                Color::srgb(0.95, 0.9, 1.0),
+                                Color::srgb(0.4, 0.2, 0.5),
+                                Color::srgb(0.7, 0.4, 0.8),
+                            ),
+                        };
+
+                        let current_votes = card_vote_tracker
+                            .as_ref()
+                            .and_then(|tracker| tracker.votes.get(&card.name))
+                            .copied()
+                            .unwrap_or(0);
+
+                        let is_activated = current_votes >= card.vote_requirement;
+                        let is_deployed = card_manager.deployed_card_ids.contains(&card.id);
+
+                        // Card container with card-like styling
                         cards_box.spawn(NodeBundle {
                             style: Style {
+                                width: Val::Percent(100.0),
                                 flex_direction: FlexDirection::Column,
-                                padding: UiRect::all(Val::Px(8.0)),
-                                margin: UiRect::bottom(Val::Px(5.0)),
+                                border: UiRect::all(Val::Px(if is_deployed { 3.0 } else { 2.0 })),
                                 ..default()
                             },
-                            background_color: Color::srgba(0.15, 0.15, 0.2, 0.8).into(),
+                            background_color: if is_deployed {
+                                Color::srgba(0.25, 0.25, 0.3, 0.9) // Subtle white glow if deployed
+                            } else if is_activated {
+                                Color::srgba(0.2, 0.6, 0.2, 0.3) // Green tint if ready
+                            } else {
+                                Color::srgba(0.15, 0.15, 0.2, 0.95)
+                            }.into(),
+                            border_color: if is_deployed {
+                                Color::srgb(0.8, 0.8, 0.9) // Subtle white glow border
+                            } else {
+                                card_border
+                            }.into(),
                             ..default()
-                        }).with_children(|card_box| {
-                            // Card type badge
-                            let type_color = match card.card_type {
-                                CardType::Resistance => Color::srgb(0.8, 0.2, 0.2),
-                                CardType::Palestinian => Color::srgb(0.2, 0.8, 0.2),
-                                CardType::Politics => Color::srgb(0.2, 0.5, 0.8),
-                                CardType::Negative => Color::srgb(0.6, 0.3, 0.6),
-                            };
-
-                            card_box.spawn(TextBundle {
-                                text: Text::from_section(
-                                    format!("[{:?}]", card.card_type).to_uppercase(),
-                                    TextStyle {
-                                        font_size: 12.0,
-                                        color: type_color,
-                                        ..default()
-                                    },
-                                ),
+                        }).with_children(|card_container| {
+                            // Card header (type badge)
+                            card_container.spawn(NodeBundle {
                                 style: Style {
-                                    margin: UiRect::bottom(Val::Px(3.0)),
+                                    width: Val::Percent(100.0),
+                                    padding: UiRect::all(Val::Px(6.0)),
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    align_items: AlignItems::Center,
                                     ..default()
                                 },
+                                background_color: type_bg.into(),
                                 ..default()
-                            });
-
-                            // Card name
-                            card_box.spawn(TextBundle {
-                                text: Text::from_section(
-                                    &card.name,
-                                    TextStyle {
-                                        font_size: 16.0,
-                                        color: ui_config.text_primary_color(),
-                                        ..default()
-                                    },
-                                ),
-                                style: Style {
-                                    margin: UiRect::bottom(Val::Px(3.0)),
-                                    ..default()
-                                },
-                                ..default()
-                            });
-
-                            // Card description
-                            if let Some(ref desc) = card.description {
-                                card_box.spawn(TextBundle {
+                            }).with_children(|header| {
+                                header.spawn(TextBundle {
                                     text: Text::from_section(
-                                        desc,
+                                        format!("{:?}", card.card_type).to_uppercase(),
                                         TextStyle {
-                                            font_size: 13.0,
-                                            color: ui_config.text_secondary_color(),
+                                            font_size: 11.0,
+                                            color: type_color,
                                             ..default()
                                         },
                                     ),
-                                    style: Style {
-                                        margin: UiRect::bottom(Val::Px(3.0)),
-                                        ..default()
-                                    },
                                     ..default()
                                 });
-                            }
 
-                            // Vote count and cost info
-                            let current_votes = card_vote_tracker
-                                .as_ref()
-                                .and_then(|tracker| tracker.votes.get(&card.name))
-                                .copied()
-                                .unwrap_or(0);
+                                // Cost badge
+                                header.spawn(TextBundle {
+                                    text: Text::from_section(
+                                        format!("💰{}", card.cost),
+                                        TextStyle {
+                                            font_size: 11.0,
+                                            color: type_color,
+                                            ..default()
+                                        },
+                                    ),
+                                    ..default()
+                                });
+                            });
 
-                            let vote_text = if card_vote_tracker.is_some() {
-                                format!("Votes: {}/{} | Cost: {}", current_votes, card.vote_requirement, card.cost)
-                            } else {
-                                format!("Required: {} votes | Cost: {}", card.vote_requirement, card.cost)
-                            };
+                            // Card body
+                            card_container.spawn(NodeBundle {
+                                style: Style {
+                                    width: Val::Percent(100.0),
+                                    padding: UiRect::all(Val::Px(10.0)),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(6.0),
+                                    ..default()
+                                },
+                                ..default()
+                            }).with_children(|body| {
+                                // Card name
+                                body.spawn(TextBundle {
+                                    text: Text::from_section(
+                                        &card.name,
+                                        TextStyle {
+                                            font_size: 15.0,
+                                            color: if is_deployed {
+                                                Color::srgb(1.0, 1.0, 1.0) // White when deployed
+                                            } else {
+                                                ui_config.text_primary_color()
+                                            },
+                                            ..default()
+                                        },
+                                    ),
+                                    ..default()
+                                });
 
-                            let vote_color = if current_votes >= card.vote_requirement {
-                                Color::srgb(0.2, 0.8, 0.2) // Green when threshold reached
-                            } else if current_votes > 0 {
-                                Color::srgb(0.8, 0.7, 0.2) // Yellow when votes are accumulating
-                            } else {
-                                Color::srgb(0.6, 0.6, 0.7) // Gray when no votes
-                            };
+                                // Card description
+                                if let Some(ref desc) = card.description {
+                                    body.spawn(TextBundle {
+                                        text: Text::from_section(
+                                            desc,
+                                            TextStyle {
+                                                font_size: 12.0,
+                                                color: if is_deployed {
+                                                    Color::srgb(0.9, 0.9, 0.95) // Light white when deployed
+                                                } else {
+                                                    ui_config.text_secondary_color()
+                                                },
+                                                ..default()
+                                            },
+                                        ),
+                                        ..default()
+                                    });
+                                }
+                            });
 
-                            card_box.spawn(TextBundle {
-                                text: Text::from_section(
-                                    vote_text,
-                                    TextStyle {
-                                        font_size: 12.0,
-                                        color: vote_color,
+                            // Card footer (votes)
+                            if !is_deployed {
+                                let vote_text = format!("⬆ {}/{}", current_votes, card.vote_requirement);
+                                let vote_color = if is_activated {
+                                    Color::srgb(0.3, 1.0, 0.3) // Bright green when ready
+                                } else if current_votes > 0 {
+                                    Color::srgb(1.0, 0.8, 0.2) // Yellow when accumulating
+                                } else {
+                                    Color::srgb(0.5, 0.5, 0.6) // Gray when no votes
+                                };
+
+                                card_container.spawn(NodeBundle {
+                                    style: Style {
+                                        width: Val::Percent(100.0),
+                                        padding: UiRect::all(Val::Px(6.0)),
+                                        justify_content: JustifyContent::Center,
+                                        border: UiRect::top(Val::Px(1.0)),
                                         ..default()
                                     },
-                                ),
-                                ..default()
-                            });
+                                    background_color: Color::srgba(0.1, 0.1, 0.15, 0.5).into(),
+                                    border_color: Color::srgba(0.3, 0.3, 0.35, 0.5).into(),
+                                    ..default()
+                                }).with_children(|footer| {
+                                    footer.spawn(TextBundle {
+                                        text: Text::from_section(
+                                            vote_text,
+                                            TextStyle {
+                                                font_size: 13.0,
+                                                color: vote_color,
+                                                ..default()
+                                            },
+                                        ),
+                                        ..default()
+                                    });
+                                });
+                            } else {
+                                // Show "ACTIVE" badge with subtle white glow
+                                card_container.spawn(NodeBundle {
+                                    style: Style {
+                                        width: Val::Percent(100.0),
+                                        padding: UiRect::all(Val::Px(6.0)),
+                                        justify_content: JustifyContent::Center,
+                                        border: UiRect::top(Val::Px(1.0)),
+                                        ..default()
+                                    },
+                                    background_color: Color::srgba(0.3, 0.3, 0.35, 0.6).into(),
+                                    border_color: Color::srgba(0.6, 0.6, 0.7, 0.7).into(),
+                                    ..default()
+                                }).with_children(|footer| {
+                                    footer.spawn(TextBundle {
+                                        text: Text::from_section(
+                                            "✓ ACTIVE",
+                                            TextStyle {
+                                                font_size: 12.0,
+                                                color: Color::srgb(0.95, 0.95, 1.0),
+                                                ..default()
+                                            },
+                                        ),
+                                        ..default()
+                                    });
+                                });
+                            }
                         });
                     }
                 }
