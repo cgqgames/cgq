@@ -602,3 +602,8 @@ mod tests {
         assert!(context.get_variable("item").is_some());
     }
 }
+
+// Include comprehensive effect operation tests
+#[cfg(test)]
+#[path = "effect_executor_tests.rs"]
+mod comprehensive_tests;
