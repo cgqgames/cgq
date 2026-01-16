@@ -18,6 +18,7 @@ mod ui_config;
 mod chat;
 mod twitch;
 mod chat_plugin;
+mod card_3d;
 
 use components::*;
 use resources::*;
@@ -104,14 +105,17 @@ fn main() {
         .init_resource::<CardManager>()
         .init_resource::<GameState>()
         .init_resource::<CollectionManager>()
+        .init_resource::<card_3d::SpawnedCards>()
         // Systems
-        .add_systems(Startup, (setup, load_quiz, load_cards))
+        .add_systems(Startup, (setup, load_quiz, load_cards, card_3d::setup_3d_cards))
         .add_systems(Update, (
             quiz_system,
             card_effect_system,
             timer_system,
             input_system,
             ui_system,
+            card_3d::spawn_cards_system,
+            card_3d::update_card_positions,
         ));
 
     // Conditionally add chat integration
