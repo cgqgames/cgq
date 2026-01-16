@@ -489,13 +489,76 @@ fn ui_system(
                     height: Val::Px(cbox.height),
                     padding: UiRect::all(Val::Px(15.0)),
                     flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(8.0),
+                    row_gap: Val::Px(12.0),
                     ..default()
                 },
                 background_color: ui_config.cards_grid_background().into(),
                 ..default()
             }).with_children(|cards_box| {
-                // Header
+                // Active Cards Section
+                let deployed_cards: Vec<&CardDefinition> = card_manager.available_cards
+                    .iter()
+                    .filter(|card| card_manager.deployed_card_ids.contains(&card.id))
+                    .collect();
+
+                if !deployed_cards.is_empty() {
+                    cards_box.spawn(TextBundle {
+                        text: Text::from_section(
+                            "ACTIVE EFFECTS",
+                            TextStyle {
+                                font_size: 18.0,
+                                color: Color::srgb(0.9, 0.9, 1.0),
+                                ..default()
+                            },
+                        ),
+                        style: Style {
+                            margin: UiRect::bottom(Val::Px(4.0)),
+                            ..default()
+                        },
+                        ..default()
+                    });
+
+                    // Show deployed cards compactly
+                    for card in &deployed_cards {
+                        cards_box.spawn(NodeBundle {
+                            style: Style {
+                                width: Val::Percent(100.0),
+                                padding: UiRect::all(Val::Px(8.0)),
+                                border: UiRect::all(Val::Px(2.0)),
+                                ..default()
+                            },
+                            background_color: Color::srgba(0.25, 0.25, 0.3, 0.8).into(),
+                            border_color: Color::srgb(0.8, 0.8, 0.9).into(),
+                            ..default()
+                        }).with_children(|active_card| {
+                            active_card.spawn(TextBundle {
+                                text: Text::from_section(
+                                    format!("✓ {}", card.name),
+                                    TextStyle {
+                                        font_size: 13.0,
+                                        color: Color::srgb(0.95, 0.95, 1.0),
+                                        ..default()
+                                    },
+                                ),
+                                ..default()
+                            });
+                        });
+                    }
+
+                    // Separator
+                    cards_box.spawn(NodeBundle {
+                        style: Style {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(1.0),
+                            margin: UiRect::vertical(Val::Px(4.0)),
+                            ..default()
+                        },
+                        background_color: Color::srgba(0.4, 0.4, 0.5, 0.5).into(),
+                        ..default()
+                    });
+                }
+
+                // Available Cards Header
                 cards_box.spawn(TextBundle {
                     text: Text::from_section(
                         "AVAILABLE CARDS",
