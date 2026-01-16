@@ -45,6 +45,10 @@ struct Args {
     /// Twitch channel to connect to for chat integration (optional)
     #[arg(short = 't', long)]
     twitch_channel: Option<String>,
+
+    /// Minimum votes required for chat consensus (default: 3)
+    #[arg(long, default_value = "3")]
+    chat_threshold: usize,
 }
 
 fn main() {
@@ -69,6 +73,7 @@ fn main() {
 
     let background_color = ui_config.background_color();
     let twitch_channel = args.twitch_channel.clone();
+    let chat_threshold = args.chat_threshold;
 
     let mut app = App::new();
 
@@ -102,8 +107,12 @@ fn main() {
 
     // Conditionally add chat integration
     if let Some(channel) = twitch_channel {
-        info!("Enabling Twitch chat integration for channel: {}", channel);
-        app.add_plugins(chat_plugin::ChatPlugin { channel });
+        info!("Enabling Twitch chat integration for channel: {} (threshold: {} votes)", channel, chat_threshold);
+        app.add_plugins(chat_plugin::ChatPlugin {
+            channel,
+            answer_threshold: chat_threshold,
+            card_threshold: chat_threshold * 2, // Card threshold is 2x answer threshold
+        });
     }
 
     app.run();

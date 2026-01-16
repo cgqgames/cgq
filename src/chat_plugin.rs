@@ -2,6 +2,8 @@ use bevy::prelude::*;
 use tokio::sync::mpsc;
 use crate::chat::{ChatCommand, ChatProvider};
 use crate::twitch::TwitchChatProvider;
+use crate::components::{Question, ActiveQuestion};
+use crate::resources::{QuizState, Score};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -9,6 +11,15 @@ use tokio::sync::Mutex;
 #[derive(Resource)]
 pub struct ChatReceiver {
     pub receiver: mpsc::UnboundedReceiver<ChatCommand>,
+}
+
+/// Configuration for chat consensus
+#[derive(Resource)]
+pub struct ChatConsensusConfig {
+    /// Minimum number of votes required to trigger consensus answer
+    pub answer_threshold: usize,
+    /// Minimum number of votes required to activate a card
+    pub card_threshold: usize,
 }
 
 /// Resource tracking chat answer submissions for consensus
@@ -165,6 +176,8 @@ pub fn process_chat_commands(
 /// Plugin for chat integration
 pub struct ChatPlugin {
     pub channel: String,
+    pub answer_threshold: usize,
+    pub card_threshold: usize,
 }
 
 impl Plugin for ChatPlugin {
@@ -197,8 +210,86 @@ impl Plugin for ChatPlugin {
 
         app
             .insert_resource(ChatReceiver { receiver })
+            .insert_resource(ChatConsensusConfig {
+                answer_threshold: self.answer_threshold,
+                card_threshold: self.card_threshold,
+            })
             .init_resource::<ChatAnswerTracker>()
             .init_resource::<ChatCardVoteTracker>()
-            .add_systems(Update, process_chat_commands);
+            .add_systems(Update, (
+                process_chat_commands,
+                check_answer_consensus,
+                reset_votes_on_question_change,
+            ));
+    }
+}
+
+/// System that checks if consensus is reached and submits the answer
+pub fn check_answer_consensus(
+    config: Res<ChatConsensusConfig>,
+    mut answer_tracker: ResMut<ChatAnswerTracker>,
+    mut quiz_state: ResMut<QuizState>,
+    mut score: ResMut<Score>,
+    questions: Query<&Question, With<ActiveQuestion>>,
+) {
+    if !quiz_state.game_started || quiz_state.paused || quiz_state.game_complete {
+        return;
+    }
+
+    // Check if we have enough votes
+    let total_votes = answer_tracker.total_votes();
+    if total_votes < config.answer_threshold {
+        return;
+    }
+
+    // Get consensus answer
+    if let Some((answer, count)) = answer_tracker.get_consensus() {
+        info!("Chat consensus reached: {} with {} votes (threshold: {})",
+              answer, count, config.answer_threshold);
+
+        // Submit the answer
+        if let Ok(question) = questions.get_single() {
+            let correct = question.is_correct(&answer);
+
+            if correct {
+                score.current += question.points;
+                score.correct_answers += 1;
+                info!("✅ Chat answered correctly! +{} points. Score: {}",
+                      question.points, score.current);
+            } else {
+                info!("❌ Chat answered incorrectly! Correct answer: {:?}",
+                      question.correct_answer().map(|o| &o.id));
+            }
+
+            score.total_answered += 1;
+
+            // Auto-advance to next question
+            quiz_state.current_question_index += 1;
+
+            if quiz_state.current_question_index >= quiz_state.total_questions {
+                quiz_state.game_complete = true;
+                info!("🏁 Quiz complete! Final score: {} / {}",
+                      score.current, score.passing_grade);
+            } else {
+                info!("Moving to question {}", quiz_state.current_question_index + 1);
+            }
+
+            // Reset tracker for next question
+            answer_tracker.reset();
+        }
+    }
+}
+
+/// System that resets vote trackers when the question changes
+pub fn reset_votes_on_question_change(
+    quiz_state: Res<QuizState>,
+    mut answer_tracker: ResMut<ChatAnswerTracker>,
+    mut card_tracker: ResMut<ChatCardVoteTracker>,
+) {
+    // Reset when question index changes
+    if quiz_state.is_changed() && quiz_state.game_started {
+        info!("Question changed, resetting chat votes");
+        answer_tracker.reset();
+        card_tracker.reset();
     }
 }
