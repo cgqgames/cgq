@@ -504,12 +504,10 @@ fn ui_system(
                     bottom: Val::Px(cbox.bottom),
                     width: Val::Px(cbox.width),
                     height: Val::Px(cbox.height),
-                    padding: UiRect::all(Val::Px(15.0)),
                     flex_direction: FlexDirection::Column,
                     row_gap: Val::Px(12.0),
                     ..default()
                 },
-                background_color: ui_config.cards_grid_background().into(),
                 ..default()
             }).with_children(|cards_box| {
                 // Active Cards Section
