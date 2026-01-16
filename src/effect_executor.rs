@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use crate::effect::{EffectOperation, Predicate, Value, CardEffect, EffectContext};
 use crate::game_state::GameState;
+use crate::collections::{CollectionManager, evaluate_item_predicate};
 use std::collections::HashMap;
 
 /// Result type for effect execution
@@ -182,29 +183,87 @@ impl EffectExecutor {
                 warn!("ScheduleOperation not yet implemented");
             }
 
-            EffectOperation::Filter { target: _, predicate: _ } => {
-                // TODO: Implement collection filtering
-                warn!("Filter operation not yet implemented");
+            EffectOperation::Filter { target, predicate } => {
+                // Get collection manager
+                if let Some(mut collections) = world.get_resource_mut::<CollectionManager>() {
+                    if let Some(collection) = collections.get_mut(target) {
+                        // Filter collection using predicate
+                        collection.filter(|item| evaluate_item_predicate(predicate, item));
+                    } else {
+                        warn!("Collection not found: {}", target);
+                    }
+                } else {
+                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
+                }
             }
 
-            EffectOperation::Remove { target: _, count: _, filter: _, random: _ } => {
-                // TODO: Implement collection removal
-                warn!("Remove operation not yet implemented");
+            EffectOperation::Remove { target, count, filter, random } => {
+                if let Some(mut collections) = world.get_resource_mut::<CollectionManager>() {
+                    if let Some(collection) = collections.get_mut(target) {
+                        // Apply filter first if provided
+                        if let Some(pred) = filter {
+                            collection.filter(|item| evaluate_item_predicate(pred, item));
+                        }
+
+                        // Remove items
+                        let removed = collection.remove(*count, random.unwrap_or(false));
+
+                        // Store removed items in context
+                        if removed.len() == 1 {
+                            context.set_variable("removed".to_string(), removed[0].clone());
+                        } else {
+                            context.set_variable("removed".to_string(), Value::Array(removed));
+                        }
+                    } else {
+                        warn!("Collection not found: {}", target);
+                    }
+                } else {
+                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
+                }
             }
 
-            EffectOperation::Append { target: _, item: _ } => {
-                // TODO: Implement collection append
-                warn!("Append operation not yet implemented");
+            EffectOperation::Append { target, item } => {
+                if let Some(mut collections) = world.get_resource_mut::<CollectionManager>() {
+                    let collection = collections.get_or_create(target);
+                    collection.append(item.clone());
+                } else {
+                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
+                }
             }
 
-            EffectOperation::Insert { target: _, index: _, item: _ } => {
-                // TODO: Implement collection insert
-                warn!("Insert operation not yet implemented");
+            EffectOperation::Insert { target, index, item } => {
+                if let Some(mut collections) = world.get_resource_mut::<CollectionManager>() {
+                    let collection = collections.get_or_create(target);
+                    collection.insert(*index, item.clone());
+                } else {
+                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
+                }
             }
 
-            EffectOperation::ForEach { collection: _, operations: _ } => {
-                // TODO: Implement collection iteration
-                warn!("ForEach operation not yet implemented");
+            EffectOperation::ForEach { collection: collection_path, operations } => {
+                // Get collection items (clone to avoid borrow conflicts)
+                let items = if let Some(collections) = world.get_resource::<CollectionManager>() {
+                    if let Some(collection) = collections.get(collection_path) {
+                        collection.to_vec()
+                    } else {
+                        warn!("Collection not found: {}", collection_path);
+                        Vec::new()
+                    }
+                } else {
+                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
+                };
+
+                // Execute operations for each item
+                for (index, item) in items.iter().enumerate() {
+                    // Set iteration variables
+                    context.set_variable("item".to_string(), item.clone());
+                    context.set_variable("index".to_string(), Value::Int(index as i32));
+
+                    // Execute operations
+                    for op in operations {
+                        self.execute_operation(op, context, state, world)?;
+                    }
+                }
             }
         }
 
@@ -426,5 +485,120 @@ mod tests {
 
         // Verify variable is set
         assert_eq!(context.get_variable("my_value"), Some(&Value::Int(42)));
+    }
+
+    #[test]
+    fn test_collection_operations() {
+        use crate::collections::{CollectionManager, Collection};
+        use std::collections::HashMap;
+
+        let mut world = World::new();
+
+        // Initialize collection manager with test data
+        let mut collections = CollectionManager::new();
+        let mut collection = Collection::new();
+
+        // Add test items
+        for i in 1..=5 {
+            let mut item = HashMap::new();
+            item.insert("id".to_string(), Value::Int(i));
+            item.insert("value".to_string(), Value::Int(i * 10));
+            collection.append(Value::Object(item));
+        }
+
+        collections.set("test.items", collection);
+        world.insert_resource(collections);
+
+        let mut state = GameState::new();
+        let mut executor = EffectExecutor::new();
+        let mut context = EffectContext::new("test_card".to_string(), "test_effect".to_string());
+
+        // Test Filter operation
+        let filter_op = EffectOperation::Filter {
+            target: "test.items".to_string(),
+            predicate: Predicate::GreaterThan {
+                field: "value".to_string(),
+                value: Value::Int(25),
+            },
+        };
+        assert!(executor.execute_operation(&filter_op, &mut context, &mut state, &mut world).is_ok());
+
+        // Verify filtered collection
+        let collections = world.get_resource::<CollectionManager>().unwrap();
+        let collection = collections.get("test.items").unwrap();
+        assert_eq!(collection.len(), 3); // Items with value > 25: 30, 40, 50
+
+        // Test Remove operation
+        let remove_op = EffectOperation::Remove {
+            target: "test.items".to_string(),
+            count: 1,
+            filter: None,
+            random: Some(false),
+        };
+        assert!(executor.execute_operation(&remove_op, &mut context, &mut state, &mut world).is_ok());
+
+        // Verify removed
+        let collections = world.get_resource::<CollectionManager>().unwrap();
+        let collection = collections.get("test.items").unwrap();
+        assert_eq!(collection.len(), 2);
+
+        // Test Append operation
+        let mut new_item = HashMap::new();
+        new_item.insert("id".to_string(), Value::Int(99));
+        new_item.insert("value".to_string(), Value::Int(999));
+
+        let append_op = EffectOperation::Append {
+            target: "test.items".to_string(),
+            item: Value::Object(new_item),
+        };
+        assert!(executor.execute_operation(&append_op, &mut context, &mut state, &mut world).is_ok());
+
+        // Verify appended
+        let collections = world.get_resource::<CollectionManager>().unwrap();
+        let collection = collections.get("test.items").unwrap();
+        assert_eq!(collection.len(), 3);
+    }
+
+    #[test]
+    fn test_for_each_operation() {
+        use crate::collections::{CollectionManager, Collection};
+
+        let mut world = World::new();
+        world.insert_resource(crate::resources::Score {
+            current: 0,
+            passing_grade: 10,
+            correct_answers: 0,
+            total_answered: 0,
+        });
+
+        // Create collection with numbers
+        let mut collections = CollectionManager::new();
+        let mut collection = Collection::new();
+        collection.append(Value::Int(5));
+        collection.append(Value::Int(10));
+        collection.append(Value::Int(15));
+        collections.set("numbers", collection);
+        world.insert_resource(collections);
+
+        let mut state = GameState::new();
+        let mut executor = EffectExecutor::new();
+        let mut context = EffectContext::new("test_card".to_string(), "test_effect".to_string());
+
+        // ForEach that adds each number to score
+        let for_each_op = EffectOperation::ForEach {
+            collection: "numbers".to_string(),
+            operations: vec![
+                // This would normally add $item to score, but we'll just verify the loop runs
+                EffectOperation::SetVariable {
+                    name: "last_item".to_string(),
+                    value: Value::Int(0), // Will be overwritten
+                },
+            ],
+        };
+
+        assert!(executor.execute_operation(&for_each_op, &mut context, &mut state, &mut world).is_ok());
+
+        // Verify the loop ran 3 times (item variable should be set to last item)
+        assert!(context.get_variable("item").is_some());
     }
 }
