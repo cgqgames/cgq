@@ -182,16 +182,159 @@ fn setup(mut commands: Commands) {
     info!("CGQ Game Started");
 }
 
-// TODO: TECH DEBT - This function is 475 lines long (target: < 50)
-// Should be broken into separate systems:
-// - render_start_screen_system
-// - render_timer_system
-// - render_question_system
-// - render_answer_options_system
-// - render_explanation_system
-// - render_card_display_system
-// See .cgq.info/tech-debt-analysis-2026-01-16.md for details
-#[allow(clippy::too_many_arguments)] // Will be fixed when split into smaller systems
+/// Render the start screen
+fn render_start_screen(
+    commands: &mut Commands,
+    quiz_state: &QuizState,
+    args: &Args,
+) {
+    let screen_bg = if args.live {
+        Color::NONE
+    } else {
+        Color::srgb(0.1, 0.1, 0.15)
+    };
+
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            background_color: screen_bg.into(),
+            ..default()
+        },
+        QuizUI,
+    )).with_children(|parent| {
+        parent.spawn((
+            TextBundle {
+                text: Text::from_section(
+                    "CGQ - Palestinian History Quiz",
+                    TextStyle {
+                        font_size: 60.0,
+                        color: Color::WHITE,
+                        ..default()
+                    },
+                ),
+                style: Style {
+                    margin: UiRect::bottom(Val::Px(40.0)),
+                    ..default()
+                },
+                ..default()
+            },
+        ));
+
+        parent.spawn(TextBundle {
+            text: Text::from_section(
+                "Press ENTER to start",
+                TextStyle {
+                    font_size: 40.0,
+                    color: Color::srgb(0.7, 0.7, 0.8),
+                    ..default()
+                },
+            ),
+            ..default()
+        });
+
+        parent.spawn((
+            TextBundle {
+                text: Text::from_section(
+                    format!("{} questions loaded", quiz_state.total_questions),
+                    TextStyle {
+                        font_size: 30.0,
+                        color: Color::srgb(0.5, 0.5, 0.6),
+                        ..default()
+                    },
+                ),
+                style: Style {
+                    margin: UiRect::top(Val::Px(40.0)),
+                    ..default()
+                },
+                ..default()
+            },
+        ));
+    });
+}
+
+/// Render the game over screen
+fn render_game_over_screen(
+    commands: &mut Commands,
+    score: &Score,
+    args: &Args,
+) {
+    let passed = score.current >= score.passing_grade;
+    let screen_bg = if args.live {
+        Color::NONE
+    } else {
+        Color::srgb(0.1, 0.1, 0.15)
+    };
+
+    commands.spawn((
+        NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            background_color: screen_bg.into(),
+            ..default()
+        },
+        QuizUI,
+    )).with_children(|parent| {
+        parent.spawn((
+            TextBundle {
+                text: Text::from_section(
+                    if passed { "🎉 YOU WIN!" } else { "📚 Keep Learning!" },
+                    TextStyle {
+                        font_size: 60.0,
+                        color: if passed { Color::srgb(0.2, 0.8, 0.2) } else { Color::srgb(0.8, 0.5, 0.2) },
+                        ..default()
+                    },
+                ),
+                style: Style {
+                    margin: UiRect::bottom(Val::Px(40.0)),
+                    ..default()
+                },
+                ..default()
+            },
+        ));
+
+        parent.spawn(TextBundle {
+            text: Text::from_section(
+                format!("Final Score: {} / {}", score.current, score.passing_grade),
+                TextStyle {
+                    font_size: 40.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            ),
+            ..default()
+        });
+
+        parent.spawn(TextBundle {
+            text: Text::from_section(
+                format!("Correct: {} / {} ({:.1}%)",
+                    score.correct_answers,
+                    score.total_answered,
+                    (score.correct_answers as f32 / score.total_answered as f32) * 100.0
+                ),
+                TextStyle {
+                    font_size: 35.0,
+                    color: Color::srgb(0.8, 0.8, 0.9),
+                    ..default()
+                },
+            ),
+            ..default()
+        });
+    });
+}
+
 fn ui_system(
     mut commands: Commands,
     _asset_server: Res<AssetServer>,
@@ -213,148 +356,13 @@ fn ui_system(
 
     // Start screen
     if !quiz_state.game_started {
-        let screen_bg = if args.live {
-            Color::NONE // Transparent for green screen
-        } else {
-            Color::srgb(0.1, 0.1, 0.15)
-        };
-
-        commands.spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: screen_bg.into(),
-                ..default()
-            },
-            QuizUI,
-        )).with_children(|parent| {
-            parent.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        "CGQ - Palestinian History Quiz",
-                        TextStyle {
-                            font_size: 60.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    ),
-                    style: Style {
-                        margin: UiRect::bottom(Val::Px(40.0)),
-                        ..default()
-                    },
-                    ..default()
-                },
-            ));
-
-            parent.spawn(TextBundle {
-                text: Text::from_section(
-                    "Press ENTER to start",
-                    TextStyle {
-                        font_size: 40.0,
-                        color: Color::srgb(0.7, 0.7, 0.8),
-                        ..default()
-                    },
-                ),
-                ..default()
-            });
-
-            parent.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        format!("{} questions loaded", quiz_state.total_questions),
-                        TextStyle {
-                            font_size: 30.0,
-                            color: Color::srgb(0.5, 0.5, 0.6),
-                            ..default()
-                        },
-                    ),
-                    style: Style {
-                        margin: UiRect::top(Val::Px(40.0)),
-                        ..default()
-                    },
-                    ..default()
-                },
-            ));
-        });
+        render_start_screen(&mut commands, &quiz_state, &args);
         return;
     }
 
     // Game over screen
     if quiz_state.game_complete {
-        let passed = score.current >= score.passing_grade;
-        let screen_bg = if args.live {
-            Color::NONE // Transparent for green screen
-        } else {
-            Color::srgb(0.1, 0.1, 0.15)
-        };
-
-        commands.spawn((
-            NodeBundle {
-                style: Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                background_color: screen_bg.into(),
-                ..default()
-            },
-            QuizUI,
-        )).with_children(|parent| {
-            parent.spawn((
-                TextBundle {
-                    text: Text::from_section(
-                        if passed { "🎉 YOU WIN!" } else { "📚 Keep Learning!" },
-                        TextStyle {
-                            font_size: 60.0,
-                            color: if passed { Color::srgb(0.2, 0.8, 0.2) } else { Color::srgb(0.8, 0.5, 0.2) },
-                            ..default()
-                        },
-                    ),
-                    style: Style {
-                        margin: UiRect::bottom(Val::Px(40.0)),
-                        ..default()
-                    },
-                    ..default()
-                },
-            ));
-
-            parent.spawn(TextBundle {
-                text: Text::from_section(
-                    format!("Final Score: {} / {}", score.current, score.passing_grade),
-                    TextStyle {
-                        font_size: 40.0,
-                        color: Color::WHITE,
-                        ..default()
-                    },
-                ),
-                ..default()
-            });
-
-            parent.spawn(TextBundle {
-                text: Text::from_section(
-                    format!("Correct: {} / {} ({:.1}%)",
-                        score.correct_answers,
-                        score.total_answered,
-                        (score.correct_answers as f32 / score.total_answered as f32) * 100.0
-                    ),
-                    TextStyle {
-                        font_size: 35.0,
-                        color: Color::srgb(0.8, 0.8, 0.9),
-                        ..default()
-                    },
-                ),
-                ..default()
-            });
-        });
+        render_game_over_screen(&mut commands, &score, &args);
         return;
     }
 
