@@ -1,22 +1,17 @@
-# Rust
-target/
-Cargo.lock
-
-# Bevy
+# Build artifacts
 *.wasm
-wasm/
+Cargo.lock
+target/*
+wasm/*
 
-# IDE
-.idea/
-.vscode/
-*.swp
+# Environment
 *.swo
+*.swp
 
-# Claude Code
-.claude/
-
-# OS
-.DS_Store
-
-# Content (users provide their own quiz/card content)
+# Game content & working files
 content/
+share/
+
+# Non-git hidden files
+.*
+!.git*
