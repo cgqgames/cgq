@@ -282,7 +282,7 @@ pub fn evaluate_item_predicate(
 /// Get field value from an item (supports nested paths)
 fn get_field_value(item: &Value, field: &str) -> Option<Value> {
     match item {
-        Value::Object(map) => {
+        Value::Object(_map) => {
             // Support nested paths like "user.name"
             let parts: Vec<&str> = field.split('.').collect();
             let mut current = item;
