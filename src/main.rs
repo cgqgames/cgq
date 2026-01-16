@@ -11,10 +11,13 @@ mod resources;
 mod systems;
 mod cards;
 mod effect;
+mod game_state;
+mod effect_executor;
 
 use components::*;
 use resources::*;
 use systems::*;
+use game_state::GameState;
 
 #[derive(Parser, Debug, Resource, Clone)]
 #[command(name = "cgq")]
@@ -47,6 +50,7 @@ fn main() {
         .init_resource::<GameTimer>()
         .init_resource::<Score>()
         .init_resource::<CardManager>()
+        .init_resource::<GameState>()
         // Systems
         .add_systems(Startup, (setup, load_quiz))
         .add_systems(Update, (
