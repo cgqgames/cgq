@@ -1,10 +1,123 @@
 use bevy::prelude::*;
 use crate::resources::CardDefinition;
+use image::{Rgba, RgbaImage};
+use imageproc::drawing::{draw_text_mut, draw_filled_rect_mut};
+use imageproc::rect::Rect;
+use ab_glyph::{FontRef, PxScale};
 
 /// Marker component for 3D card entities
 #[derive(Component)]
 pub struct Card3D {
     pub card_id: String,
+}
+
+/// Generate a composite card texture with text baked in at runtime
+fn generate_card_texture(
+    card: &CardDefinition,
+    artwork_image: Option<&bevy::render::texture::Image>,
+) -> bevy::render::texture::Image {
+    // Card dimensions in pixels
+    let card_width = 512;
+    let card_height = 716; // Roughly 63:88 aspect ratio (card proportions)
+
+    // Create base image with card background color (beige/tan)
+    let mut img = RgbaImage::new(card_width, card_height);
+    let bg_color = Rgba([235u8, 225u8, 200u8, 255u8]); // Beige card stock
+
+    // Fill background
+    draw_filled_rect_mut(
+        &mut img,
+        Rect::at(0, 0).of_size(card_width, card_height),
+        bg_color,
+    );
+
+    // Layout regions
+    let border = 20;
+    let header_height = 60;
+    let desc_height = 160;
+    let artwork_y = border + header_height;
+    let artwork_height = card_height - (border * 2 + header_height + desc_height);
+
+    // Draw border around artwork area
+    let artwork_rect = Rect::at(border as i32, artwork_y as i32)
+        .of_size(card_width - border * 2, artwork_height);
+    draw_filled_rect_mut(&mut img, artwork_rect, Rgba([255, 255, 255, 255]));
+
+    // Composite artwork if available
+    if let Some(artwork) = artwork_image {
+        // Convert Bevy image to image-rs format and composite
+        let artwork_data = &artwork.data;
+        if let Ok(artwork_img) = image::load_from_memory(artwork_data) {
+            let artwork_rgba = artwork_img.to_rgba8();
+
+            // Resize to fit artwork area while maintaining aspect ratio
+            let resized = image::imageops::resize(
+                &artwork_rgba,
+                card_width - border * 2,
+                artwork_height,
+                image::imageops::FilterType::Lanczos3,
+            );
+
+            // Center the artwork
+            let x_offset = border;
+            let y_offset = artwork_y;
+            image::imageops::overlay(&mut img, &resized, x_offset as i64, y_offset as i64);
+        }
+    }
+
+    // Load embedded font for text rendering (using Bevy's default font data)
+    // We'll use a simple embedded font
+    let font_data = include_bytes!("../assets/fonts/FiraSans-Bold.ttf");
+    if let Ok(font) = FontRef::try_from_slice(font_data) {
+        let text_color = Rgba([20u8, 20u8, 20u8, 255u8]);
+
+        // Draw card name (header)
+        let header_scale = PxScale::from(32.0);
+        draw_text_mut(
+            &mut img,
+            text_color,
+            border as i32,
+            (border + 15) as i32,
+            header_scale,
+            &font,
+            &card.name,
+        );
+
+        // Draw description (bottom section)
+        if let Some(desc) = &card.description {
+            let desc_scale = PxScale::from(20.0);
+            let desc_y = (artwork_y + artwork_height + 20) as i32;
+
+            // Word wrap description
+            let wrapped = textwrap::wrap(desc, 40);
+            for (i, line) in wrapped.iter().take(6).enumerate() {
+                draw_text_mut(
+                    &mut img,
+                    text_color,
+                    border as i32,
+                    desc_y + (i as i32 * 24),
+                    desc_scale,
+                    &font,
+                    line,
+                );
+            }
+        }
+    }
+
+    // Convert to Bevy Image format
+    let bevy_img = bevy::render::texture::Image::new(
+        bevy::render::render_resource::Extent3d {
+            width: card_width,
+            height: card_height,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        img.into_raw(),
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::render::render_asset::RenderAssetUsages::RENDER_WORLD,
+    );
+
+    bevy_img
 }
 
 /// Marker component for the cards 3D viewport camera
@@ -118,6 +231,7 @@ pub fn spawn_card_3d(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
+    images: &mut ResMut<Assets<Image>>,
     asset_server: &Res<AssetServer>,
     card: &CardDefinition,
     position: Vec3,
@@ -126,8 +240,8 @@ pub fn spawn_card_3d(
     use bevy::render::render_asset::RenderAssetUsages;
 
     // Create a thin 3D card mesh (for flip animations and back texturing)
-    let width = 0.72;   // 0.63 * 1.15
-    let height = 1.01;  // 0.88 * 1.15
+    let width = 0.83;   // 0.72 * 1.15 (15% bigger)
+    let height = 1.16;  // 1.01 * 1.15 (15% bigger)
     let thickness = 0.02;  // Thin like a real card
 
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
@@ -152,11 +266,19 @@ pub fn spawn_card_3d(
         [-hw, -hh, -ht], [-hw, -hh,  ht], [-hw,  hh,  ht], [-hw,  hh, -ht],
     ];
 
-    // UVs - front face gets card texture, others get edge UVs
+    // UVs - front face texture only covers upper ~50% of card (artwork area)
+    // Bottom portion and borders will be card background color
     let uvs = vec![
-        // Front face - flipped vertically for correct orientation
+        // Front face - texture mapped to upper portion only
+        // Using UVs > 1.0 to map texture to just the upper middle area
+        // Actual card layout:
+        //   Top 15%: Header text area (background color)
+        //   Middle 50%: Artwork (textured)
+        //   Bottom 35%: Description area (background color)
+        // We'll use vertex colors or a separate texture for the full card later
+        // For now, map texture to cover most of the card, text will overlay
         [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
-        // Back face - flipped for back texture (will add later)
+        // Back face - flipped for card back texture (will add later)
         [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
         // Top edge
         [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
@@ -208,15 +330,19 @@ pub fn spawn_card_3d(
 
     let card_mesh = meshes.add(mesh);
 
-    // Load texture from extracted card artwork
-    let texture_handle = card.image_path.as_ref()
-        .map(|path| asset_server.load::<Image>(path.clone()));
+    // Generate composite card texture with text baked in
+    // TODO: Load artwork asynchronously and regenerate texture when ready
+    // For now, generate without artwork
+    let composite_image = generate_card_texture(card, None);
 
-    // Create PBR material with texture
+    // Add the composite texture to assets
+    let texture_handle = images.add(composite_image);
+
+    // Create PBR material with composite texture
     let material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
-        base_color_texture: texture_handle,
-        emissive: Color::srgb(0.0, 0.0, 0.0).into(), // No emissive to reduce saturation
+        base_color_texture: Some(texture_handle),
+        emissive: Color::srgb(0.0, 0.0, 0.0).into(),
         perceptual_roughness: 0.8,
         metallic: 0.0,
         reflectance: 0.2,
@@ -239,7 +365,7 @@ pub fn spawn_card_3d(
         Card3D {
             card_id: card.id.clone(),
         },
-        RenderLayers::layer(1), // Same layer as cards camera
+        RenderLayers::layer(1),
     ));
 }
 
@@ -254,6 +380,7 @@ pub fn spawn_cards_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     asset_server: Res<AssetServer>,
     card_manager: Res<crate::resources::CardManager>,
     mut spawned_cards: ResMut<SpawnedCards>,
@@ -267,9 +394,9 @@ pub fn spawn_cards_system(
             let row = index / 2;
             let col = index % 2;
 
-            // Grid centered at (0, 0, 0) - closer spacing
-            let x_offset = (col as f32 - 0.5) * 0.75;
-            let y_offset = (0.5 - row as f32) * 1.0;
+            // Grid centered at (0, 0, 0) - more spacing for larger cards
+            let x_offset = (col as f32 - 0.5) * 0.95;  // Increased from 0.75
+            let y_offset = (0.5 - row as f32) * 1.25;  // Increased from 1.0
 
             let position = Vec3::new(x_offset, y_offset, 0.0);
 
@@ -277,6 +404,7 @@ pub fn spawn_cards_system(
                 &mut commands,
                 &mut meshes,
                 &mut materials,
+                &mut images,
                 &asset_server,
                 card,
                 position,
