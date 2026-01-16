@@ -67,6 +67,10 @@ impl EffectExecutor {
     }
 
     /// Execute a single operation
+    // TODO: TECH DEBT - This function is 207 lines with complexity 26/25
+    // Should be split into separate functions for each operation type:
+    // - execute_set_operation, execute_add_operation, execute_multiply_operation, etc.
+    #[allow(clippy::cognitive_complexity)]
     pub fn execute_operation(
         &mut self,
         operation: &EffectOperation,

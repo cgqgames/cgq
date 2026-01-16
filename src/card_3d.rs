@@ -12,6 +12,9 @@ pub struct Card3D {
 }
 
 /// Generate a composite card texture with text baked in at runtime
+// TODO: TECH DEBT - This function is 161 lines long (target: < 50)
+// Should be split into helper functions:
+// - create_card_background, draw_card_header, draw_card_artwork, draw_card_description
 fn generate_card_texture(
     card: &CardDefinition,
     artwork_path: Option<&str>,

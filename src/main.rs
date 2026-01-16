@@ -182,6 +182,16 @@ fn setup(mut commands: Commands) {
     info!("CGQ Game Started");
 }
 
+// TODO: TECH DEBT - This function is 475 lines long (target: < 50)
+// Should be broken into separate systems:
+// - render_start_screen_system
+// - render_timer_system
+// - render_question_system
+// - render_answer_options_system
+// - render_explanation_system
+// - render_card_display_system
+// See .cgq.info/tech-debt-analysis-2026-01-16.md for details
+#[allow(clippy::too_many_arguments)] // Will be fixed when split into smaller systems
 fn ui_system(
     mut commands: Commands,
     _asset_server: Res<AssetServer>,
