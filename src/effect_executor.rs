@@ -1,3 +1,6 @@
+// TODO: This module is planned for future effect system implementation
+#![allow(dead_code)]
+
 use bevy::prelude::*;
 use crate::effect::{EffectOperation, Predicate, Value, CardEffect, EffectContext};
 use crate::game_state::GameState;
@@ -155,7 +158,7 @@ impl EffectExecutor {
                 // Register event listener
                 self.event_listeners
                     .entry(event.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(operations.clone());
             }
 
@@ -366,8 +369,7 @@ impl EffectExecutor {
         world: &World,
     ) -> Result<Value, EffectError> {
         // Check if it's a variable reference
-        if field.starts_with('$') {
-            let var_name = &field[1..];
+        if let Some(var_name) = field.strip_prefix('$') {
             if let Some(value) = context.get_variable(var_name) {
                 return Ok(value.clone());
             }

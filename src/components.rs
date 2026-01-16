@@ -38,6 +38,8 @@ impl Question {
 pub struct ActiveQuestion;
 
 /// Represents a deployed card in the game
+/// TODO: Future feature for more detailed card tracking
+#[allow(dead_code)]
 #[derive(Component, Clone, Debug)]
 pub struct DeployedCard {
     pub card_id: String,
@@ -52,6 +54,7 @@ pub enum CardType {
     Palestinian,
     Politics,
     Negative,
+    #[allow(clippy::upper_case_acronyms)]
     IDF,
     Hasbara,
     Ceasefire,
@@ -86,6 +89,8 @@ pub struct MultiplyPoints {
 }
 
 /// Player answer submission
+/// TODO: Future feature for tracking individual player answers
+#[allow(dead_code)]
 #[derive(Component)]
 pub struct PlayerAnswer {
     pub player_id: String,

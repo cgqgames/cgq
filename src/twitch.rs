@@ -29,9 +29,6 @@ impl TwitchChatProvider {
         // Or with tags: @badge-info=;badges=;client-nonce=...;user-id=12345;... :username!username@username.tmi.twitch.tv PRIVMSG #channel :message
 
         let mut user_id = None;
-        let mut username = String::new();
-        let mut channel = String::new();
-        let mut message = String::new();
 
         // Check for tags (starts with @)
         let line = if line.starts_with('@') {
@@ -57,13 +54,13 @@ impl TwitchChatProvider {
         // Format: :username!username@username.tmi.twitch.tv PRIVMSG #channel :message
         if let Some(rest) = line.strip_prefix(':') {
             if let Some((user_part, rest)) = rest.split_once('!') {
-                username = user_part.to_string();
+                let username = user_part.to_string();
 
                 if let Some(msg_start) = rest.find(" PRIVMSG ") {
                     let after_privmsg = &rest[msg_start + 9..];
                     if let Some((chan, msg)) = after_privmsg.split_once(" :") {
-                        channel = chan.to_string();
-                        message = msg.to_string();
+                        let channel = chan.to_string();
+                        let message = msg.to_string();
 
                         return Some(ChatMessage {
                             username,

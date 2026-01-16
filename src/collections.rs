@@ -1,3 +1,6 @@
+// TODO: This module is planned for future collection system implementation
+#![allow(dead_code)]
+
 use bevy::prelude::*;
 use crate::effect::{Value, Predicate};
 use std::collections::HashMap;
@@ -132,7 +135,7 @@ impl CollectionManager {
     pub fn get_or_create(&mut self, path: &str) -> &mut Collection {
         self.collections
             .entry(path.to_string())
-            .or_insert_with(Collection::new)
+            .or_default()
     }
 
     /// Set collection

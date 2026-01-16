@@ -147,7 +147,9 @@ fn generate_card_texture(
     }
 
     // Convert to Bevy Image format
-    let bevy_img = bevy::render::texture::Image::new(
+    
+
+    bevy::render::texture::Image::new(
         bevy::render::render_resource::Extent3d {
             width: card_width,
             height: card_height,
@@ -157,9 +159,7 @@ fn generate_card_texture(
         img.into_raw(),
         bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
         bevy::render::render_asset::RenderAssetUsages::RENDER_WORLD,
-    );
-
-    bevy_img
+    )
 }
 
 /// Marker component for the cards 3D viewport camera
@@ -274,7 +274,7 @@ pub fn spawn_card_3d(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     images: &mut ResMut<Assets<Image>>,
-    asset_server: &Res<AssetServer>,
+    _asset_server: &Res<AssetServer>,
     card: &CardDefinition,
     position: Vec3,
 ) {

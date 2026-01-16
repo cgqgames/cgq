@@ -1,3 +1,6 @@
+// TODO: This module is planned for future state management system implementation
+#![allow(dead_code)]
+
 use bevy::prelude::*;
 use crate::effect::Value;
 use crate::resources::{GameTimer, Score, CardManager};
@@ -6,18 +9,12 @@ use std::collections::HashMap;
 /// Path-based access to game state for effects
 /// Allows effects to query/modify state using string paths like "timer.remaining"
 #[derive(Resource)]
+#[derive(Default)]
 pub struct GameState {
     // Cached values for quick access
     variables: HashMap<String, Value>,
 }
 
-impl Default for GameState {
-    fn default() -> Self {
-        Self {
-            variables: HashMap::new(),
-        }
-    }
-}
 
 impl GameState {
     pub fn new() -> Self {

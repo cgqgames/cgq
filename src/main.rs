@@ -184,13 +184,13 @@ fn setup(mut commands: Commands) {
 
 fn ui_system(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    _asset_server: Res<AssetServer>,
     quiz_state: Res<QuizState>,
     score: Res<Score>,
     timer: Res<GameTimer>,
     ui_config: Res<UiConfig>,
     card_manager: Res<CardManager>,
-    card_vote_tracker: Option<Res<chat_plugin::ChatCardVoteTracker>>,
+    _card_vote_tracker: Option<Res<chat_plugin::ChatCardVoteTracker>>,
     card_render_texture: Option<Res<card_3d::CardRenderTexture>>,
     args: Res<Args>,
     questions: Query<&Question, With<ActiveQuestion>>,
@@ -355,9 +355,6 @@ fn ui_system(
             .filter(|card| card_manager.deployed_card_ids.contains(&card.id))
             .cloned()
             .collect();
-
-        let all_cards = card_manager.available_cards.clone();
-        let deployed_ids = card_manager.deployed_card_ids.clone();
 
         // Root container (transparent background)
         commands.spawn((

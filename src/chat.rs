@@ -36,8 +36,8 @@ impl ChatMessage {
         }
 
         // Check for "use <card-name>" pattern
-        if msg.starts_with("use ") {
-            let card_name = msg[4..].trim().to_string();
+        if let Some(stripped) = msg.strip_prefix("use ") {
+            let card_name = stripped.trim().to_string();
             if !card_name.is_empty() {
                 return ChatCommand::UseCard {
                     username: self.username.clone(),

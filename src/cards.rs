@@ -108,7 +108,7 @@ fn card_to_definition(card: Card) -> CardDefinition {
     let image_path = card.visual.image.map(|img| {
         // Try background version first (based on card ID)
         let bg_path = format!("cards-backgrounds/{}.png", card.id);
-        let full_path = format!("cards/{}", img);
+        let _full_path = format!("cards/{}", img);
 
         // Check if background exists by trying both paths
         // AssetServer will handle the actual file existence check
@@ -153,6 +153,8 @@ impl QuestionSet {
 }
 
 /// Card set with generic effects (JSON format)
+/// TODO: Alternative JSON format for future use
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GenericCardSet {
     pub metadata: CardMetadata,
@@ -160,6 +162,7 @@ pub struct GenericCardSet {
 }
 
 /// Card definition with generic effects
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenericCard {
     pub id: String,

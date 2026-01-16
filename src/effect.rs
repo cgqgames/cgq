@@ -1,3 +1,6 @@
+// TODO: This module contains planned effect system types - many are unused for now
+#![allow(dead_code)]
+
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -314,9 +317,9 @@ mod tests {
         assert_eq!(int_val.as_int(), Some(42));
         assert_eq!(int_val.as_float(), Some(42.0));
 
-        let float_val = Value::Float(3.14);
+        let float_val = Value::Float(std::f32::consts::PI);
         assert_eq!(float_val.as_int(), Some(3));
-        assert_eq!(float_val.as_float(), Some(3.14));
+        assert_eq!(float_val.as_float(), Some(std::f32::consts::PI));
 
         let bool_val = Value::Bool(true);
         assert_eq!(bool_val.as_bool(), Some(true));
