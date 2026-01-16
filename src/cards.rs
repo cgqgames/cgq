@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::components::CardType;
 use crate::resources::CardDefinition;
+use crate::effect::CardEffect as GenericCardEffect;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CardSet {
@@ -126,5 +127,104 @@ impl QuestionSet {
     pub async fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         let content = tokio::fs::read_to_string(path).await?;
         Ok(serde_yaml::from_str(&content)?)
+    }
+}
+
+/// Card set with generic effects (JSON format)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GenericCardSet {
+    pub metadata: CardMetadata,
+    pub cards: Vec<GenericCard>,
+}
+
+/// Card definition with generic effects
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenericCard {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub card_type: CardType,
+    pub permanence: String,
+    pub vote_requirement: usize,
+    pub cost: i32,
+    pub description: Option<String>,
+    pub tags: Vec<String>,
+    pub effects: Vec<GenericCardEffect>,
+    #[serde(default)]
+    pub visual: CardVisual,
+}
+
+impl GenericCardSet {
+    /// Load from JSON file
+    pub async fn from_json_file(path: impl AsRef<Path>) -> Result<Self> {
+        let content = tokio::fs::read_to_string(path).await?;
+        Ok(serde_json::from_str(&content)?)
+    }
+
+    /// Load from JSON string
+    pub fn from_json(json: &str) -> Result<Self> {
+        Ok(serde_json::from_str(json)?)
+    }
+}
+
+/// Load generic cards from JSON
+pub async fn load_generic_cards(path: impl AsRef<Path>) -> Result<Vec<GenericCard>> {
+    let card_set = GenericCardSet::from_json_file(path).await?;
+    Ok(card_set.cards)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generic_card_deserialization() {
+        let json = r#"{
+            "metadata": {
+                "title": "Test Cards",
+                "description": "Test card set",
+                "version": "1.0"
+            },
+            "cards": [
+                {
+                    "id": "test_card",
+                    "name": "Test Card",
+                    "type": "resistance",
+                    "permanence": "permanent",
+                    "vote_requirement": 3,
+                    "cost": 5,
+                    "description": "A test card",
+                    "tags": ["test"],
+                    "effects": [
+                        {
+                            "id": "add_time",
+                            "operations": [
+                                {
+                                    "type": "add",
+                                    "target": "timer.remaining",
+                                    "amount": 60
+                                }
+                            ],
+                            "timing": "after",
+                            "priority": 100
+                        }
+                    ],
+                    "visual": {
+                        "image": "test.png"
+                    }
+                }
+            ]
+        }"#;
+
+        let result = GenericCardSet::from_json(json);
+        assert!(result.is_ok());
+
+        let card_set = result.unwrap();
+        assert_eq!(card_set.cards.len(), 1);
+
+        let card = &card_set.cards[0];
+        assert_eq!(card.id, "test_card");
+        assert_eq!(card.effects.len(), 1);
+        assert_eq!(card.effects[0].operations.len(), 1);
     }
 }
