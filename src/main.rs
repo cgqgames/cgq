@@ -49,6 +49,10 @@ struct Args {
     /// Minimum votes required for chat consensus (default: 3)
     #[arg(long, default_value = "3")]
     chat_threshold: usize,
+
+    /// Enable green screen background for streaming/recording
+    #[arg(short, long)]
+    live: bool,
 }
 
 fn main() {
@@ -71,7 +75,12 @@ fn main() {
         UiConfig::default()
     };
 
-    let background_color = ui_config.background_color();
+    // Use green screen background if --live flag is set
+    let background_color = if args.live {
+        Color::srgb(0.0, 1.0, 0.0) // Chroma key green
+    } else {
+        ui_config.background_color()
+    };
     let twitch_channel = args.twitch_channel.clone();
     let chat_threshold = args.chat_threshold;
 
@@ -96,7 +105,7 @@ fn main() {
         .init_resource::<GameState>()
         .init_resource::<CollectionManager>()
         // Systems
-        .add_systems(Startup, (setup, load_quiz))
+        .add_systems(Startup, (setup, load_quiz, load_cards))
         .add_systems(Update, (
             quiz_system,
             card_effect_system,
@@ -146,6 +155,22 @@ fn load_quiz(
     }
 }
 
+fn load_cards(
+    mut card_manager: ResMut<CardManager>,
+) {
+    // Load all cards synchronously at startup
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    match runtime.block_on(cards::load_all_cards()) {
+        Ok(cards) => {
+            info!("Loaded {} cards", cards.len());
+            card_manager.available_cards = cards;
+        }
+        Err(e) => {
+            warn!("Failed to load cards: {}. Game will continue without cards.", e);
+        }
+    }
+}
+
 fn setup(mut commands: Commands) {
     // Camera
     commands.spawn(Camera2dBundle::default());
@@ -159,6 +184,9 @@ fn ui_system(
     score: Res<Score>,
     timer: Res<GameTimer>,
     ui_config: Res<UiConfig>,
+    card_manager: Res<CardManager>,
+    card_vote_tracker: Option<Res<chat_plugin::ChatCardVoteTracker>>,
+    args: Res<Args>,
     questions: Query<&Question, With<ActiveQuestion>>,
     existing_ui: Query<Entity, With<QuizUI>>,
 ) {
@@ -169,6 +197,12 @@ fn ui_system(
 
     // Start screen
     if !quiz_state.game_started {
+        let screen_bg = if args.live {
+            Color::NONE // Transparent for green screen
+        } else {
+            Color::srgb(0.1, 0.1, 0.15)
+        };
+
         commands.spawn((
             NodeBundle {
                 style: Style {
@@ -179,7 +213,7 @@ fn ui_system(
                     align_items: AlignItems::Center,
                     ..default()
                 },
-                background_color: Color::srgb(0.1, 0.1, 0.15).into(),
+                background_color: screen_bg.into(),
                 ..default()
             },
             QuizUI,
@@ -238,6 +272,12 @@ fn ui_system(
     // Game over screen
     if quiz_state.game_complete {
         let passed = score.current >= score.passing_grade;
+        let screen_bg = if args.live {
+            Color::NONE // Transparent for green screen
+        } else {
+            Color::srgb(0.1, 0.1, 0.15)
+        };
+
         commands.spawn((
             NodeBundle {
                 style: Style {
@@ -248,7 +288,7 @@ fn ui_system(
                     align_items: AlignItems::Center,
                     ..default()
                 },
-                background_color: Color::srgb(0.1, 0.1, 0.15).into(),
+                background_color: screen_bg.into(),
                 ..default()
             },
             QuizUI,
@@ -438,7 +478,7 @@ fn ui_system(
                 });
             });
 
-            // Cards placeholder (bottom-right)
+            // Cards grid (bottom-right)
             let cbox = &ui_config.cards_grid;
             parent.spawn(NodeBundle {
                 style: Style {
@@ -448,22 +488,150 @@ fn ui_system(
                     width: Val::Px(cbox.width),
                     height: Val::Px(cbox.height),
                     padding: UiRect::all(Val::Px(15.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(10.0),
                     ..default()
                 },
                 background_color: ui_config.cards_grid_background().into(),
                 ..default()
             }).with_children(|cards_box| {
+                // Header
                 cards_box.spawn(TextBundle {
                     text: Text::from_section(
-                        "CARDS\n(Coming Soon)",
+                        "AVAILABLE CARDS",
                         TextStyle {
-                            font_size: 24.0,
-                            color: Color::srgb(0.5, 0.5, 0.6),
+                            font_size: 20.0,
+                            color: ui_config.accent_color(),
                             ..default()
                         },
                     ),
+                    style: Style {
+                        margin: UiRect::bottom(Val::Px(5.0)),
+                        ..default()
+                    },
                     ..default()
                 });
+
+                // Display cards
+                if card_manager.available_cards.is_empty() {
+                    cards_box.spawn(TextBundle {
+                        text: Text::from_section(
+                            "No cards loaded",
+                            TextStyle {
+                                font_size: 16.0,
+                                color: Color::srgb(0.6, 0.6, 0.7),
+                                ..default()
+                            },
+                        ),
+                        ..default()
+                    });
+                } else {
+                    for card in &card_manager.available_cards {
+                        cards_box.spawn(NodeBundle {
+                            style: Style {
+                                flex_direction: FlexDirection::Column,
+                                padding: UiRect::all(Val::Px(8.0)),
+                                margin: UiRect::bottom(Val::Px(5.0)),
+                                ..default()
+                            },
+                            background_color: Color::srgba(0.15, 0.15, 0.2, 0.8).into(),
+                            ..default()
+                        }).with_children(|card_box| {
+                            // Card type badge
+                            let type_color = match card.card_type {
+                                CardType::Resistance => Color::srgb(0.8, 0.2, 0.2),
+                                CardType::Palestinian => Color::srgb(0.2, 0.8, 0.2),
+                                CardType::Politics => Color::srgb(0.2, 0.5, 0.8),
+                                CardType::Negative => Color::srgb(0.6, 0.3, 0.6),
+                            };
+
+                            card_box.spawn(TextBundle {
+                                text: Text::from_section(
+                                    format!("[{:?}]", card.card_type).to_uppercase(),
+                                    TextStyle {
+                                        font_size: 12.0,
+                                        color: type_color,
+                                        ..default()
+                                    },
+                                ),
+                                style: Style {
+                                    margin: UiRect::bottom(Val::Px(3.0)),
+                                    ..default()
+                                },
+                                ..default()
+                            });
+
+                            // Card name
+                            card_box.spawn(TextBundle {
+                                text: Text::from_section(
+                                    &card.name,
+                                    TextStyle {
+                                        font_size: 16.0,
+                                        color: ui_config.text_primary_color(),
+                                        ..default()
+                                    },
+                                ),
+                                style: Style {
+                                    margin: UiRect::bottom(Val::Px(3.0)),
+                                    ..default()
+                                },
+                                ..default()
+                            });
+
+                            // Card description
+                            if let Some(ref desc) = card.description {
+                                card_box.spawn(TextBundle {
+                                    text: Text::from_section(
+                                        desc,
+                                        TextStyle {
+                                            font_size: 13.0,
+                                            color: ui_config.text_secondary_color(),
+                                            ..default()
+                                        },
+                                    ),
+                                    style: Style {
+                                        margin: UiRect::bottom(Val::Px(3.0)),
+                                        ..default()
+                                    },
+                                    ..default()
+                                });
+                            }
+
+                            // Vote count and cost info
+                            let current_votes = card_vote_tracker
+                                .as_ref()
+                                .and_then(|tracker| tracker.votes.get(&card.name))
+                                .copied()
+                                .unwrap_or(0);
+
+                            let vote_text = if card_vote_tracker.is_some() {
+                                format!("Votes: {}/{} | Cost: {}", current_votes, card.vote_requirement, card.cost)
+                            } else {
+                                format!("Required: {} votes | Cost: {}", card.vote_requirement, card.cost)
+                            };
+
+                            let vote_color = if current_votes >= card.vote_requirement {
+                                Color::srgb(0.2, 0.8, 0.2) // Green when threshold reached
+                            } else if current_votes > 0 {
+                                Color::srgb(0.8, 0.7, 0.2) // Yellow when votes are accumulating
+                            } else {
+                                Color::srgb(0.6, 0.6, 0.7) // Gray when no votes
+                            };
+
+                            card_box.spawn(TextBundle {
+                                text: Text::from_section(
+                                    vote_text,
+                                    TextStyle {
+                                        font_size: 12.0,
+                                        color: vote_color,
+                                        ..default()
+                                    },
+                                ),
+                                ..default()
+                            });
+                        });
+                    }
+                }
             });
         });
     }
