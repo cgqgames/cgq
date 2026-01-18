@@ -1,4 +1,8 @@
-// TODO: This module is planned for future state management system implementation
+//! Game state management for the effect system.
+//!
+//! Provides path-based access to game state (timer, score, etc.) for effects.
+//! Used by effect_executor and tested, but the system is not yet integrated
+//! into the main game loop.
 #![allow(dead_code)]
 
 use bevy::prelude::*;

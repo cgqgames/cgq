@@ -1,4 +1,8 @@
-// TODO: This module contains planned effect system types - many are unused for now
+//! Effect system types for card effects.
+//!
+//! This module defines the core types used by the effect execution system.
+//! Types are used by effect_executor and tested, but the system is not yet
+//! integrated into the main game loop.
 #![allow(dead_code)]
 
 use bevy::prelude::*;

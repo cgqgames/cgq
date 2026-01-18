@@ -1,4 +1,8 @@
-// TODO: This module is planned for future collection system implementation
+//! Collection management for the effect system.
+//!
+//! Provides collection types and predicates for effect operations like
+//! Filter, Remove, Append, and Insert. Used by effect_executor and tested,
+//! but the system is not yet integrated into the main game loop.
 #![allow(dead_code)]
 
 use bevy::prelude::*;

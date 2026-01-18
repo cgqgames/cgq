@@ -1,10 +1,19 @@
-// TODO: This module is planned for future effect system implementation
+//! Effect execution engine for processing card effects.
+//!
+//! This module handles execution of effect operations defined in effect.rs.
+//! The system is fully tested but not yet integrated into the main game loop.
 #![allow(dead_code)]
+
+mod value_ops;
+mod flag_ops;
+mod variable_ops;
+mod event_ops;
+mod collection_ops;
+mod control_flow;
 
 use bevy::prelude::*;
 use crate::effect::{EffectOperation, Predicate, Value, CardEffect, EffectContext};
 use crate::game_state::GameState;
-use crate::collections::{CollectionManager, evaluate_item_predicate};
 use std::collections::HashMap;
 
 /// Result type for effect execution
@@ -66,11 +75,7 @@ impl EffectExecutor {
         Ok(())
     }
 
-    /// Execute a single operation
-    // TODO: TECH DEBT - This function is 207 lines with complexity 26/25
-    // Should be split into separate functions for each operation type:
-    // - execute_set_operation, execute_add_operation, execute_multiply_operation, etc.
-    #[allow(clippy::cognitive_complexity)]
+    /// Execute a single operation by dispatching to the appropriate handler
     pub fn execute_operation(
         &mut self,
         operation: &EffectOperation,
@@ -78,203 +83,50 @@ impl EffectExecutor {
         state: &mut GameState,
         world: &mut World,
     ) -> EffectResult {
-        match operation {
-            EffectOperation::Add { target, amount } => {
-                if !state.add(target, *amount, world) {
-                    return Err(EffectError::InvalidPath(target.clone()));
-                }
-            }
+        // Try value operations
+        if let Some(result) = value_ops::execute_value_operation(operation, state, world) {
+            return result;
+        }
 
-            EffectOperation::Subtract { target, amount } => {
-                if !state.subtract(target, *amount, world) {
-                    return Err(EffectError::InvalidPath(target.clone()));
-                }
-            }
+        // Try flag operations
+        if let Some(result) = flag_ops::execute_flag_operation(operation, state, world) {
+            return result;
+        }
 
-            EffectOperation::Multiply { target, factor } => {
-                if !state.multiply(target, *factor, world) {
-                    return Err(EffectError::InvalidPath(target.clone()));
-                }
-            }
+        // Try variable operations
+        if let Some(result) = variable_ops::execute_variable_operation(operation, context) {
+            return result;
+        }
 
-            EffectOperation::Set { target, value } => {
-                if !state.set(target, value.clone(), world) {
-                    return Err(EffectError::InvalidPath(target.clone()));
-                }
-            }
+        // Try event operations
+        if let Some(result) = event_ops::execute_event_operation(self, operation, context, state, world) {
+            return result;
+        }
 
-            EffectOperation::SetFlag { flag, value } => {
-                if !state.set_flag(flag, *value, world) {
-                    return Err(EffectError::InvalidPath(flag.clone()));
-                }
-            }
+        // Try collection operations
+        if let Some(result) = collection_ops::execute_collection_operation(operation, context, world) {
+            return result;
+        }
 
-            EffectOperation::ToggleFlag { flag } => {
-                if !state.toggle_flag(flag, world) {
-                    return Err(EffectError::InvalidPath(flag.clone()));
-                }
-            }
-
-            EffectOperation::IfCondition { condition, then, else_ } => {
-                let condition_met = self.evaluate_predicate(condition, context, state, world)?;
-
-                if condition_met {
-                    for op in then {
-                        self.execute_operation(op, context, state, world)?;
-                    }
-                } else if let Some(else_ops) = else_ {
-                    for op in else_ops {
-                        self.execute_operation(op, context, state, world)?;
-                    }
-                }
-            }
-
-            EffectOperation::While { condition, operations, max_iterations } => {
-                let max = max_iterations.unwrap_or(100);
-                let mut iterations = 0;
-
-                while self.evaluate_predicate(condition, context, state, world)? {
-                    if iterations >= max {
-                        return Err(EffectError::MaxIterationsReached);
-                    }
-
-                    for op in operations {
-                        self.execute_operation(op, context, state, world)?;
-                    }
-
-                    iterations += 1;
-                }
-            }
-
-            EffectOperation::SetVariable { name, value } => {
-                context.set_variable(name.clone(), value.clone());
-            }
-
-            EffectOperation::GetVariable { name } => {
-                // Variable retrieval happens during value resolution
-                // This operation is mainly for explicit documentation
-                if context.get_variable(name).is_none() {
-                    warn!("Variable '{}' not found in context", name);
-                }
-            }
-
-            EffectOperation::OnEvent { event, operations } => {
-                // Register event listener
-                self.event_listeners
-                    .entry(event.clone())
-                    .or_default()
-                    .push(operations.clone());
-            }
-
-            EffectOperation::EmitEvent { event, data } => {
-                // Get listeners for this event
-                if let Some(listeners) = self.event_listeners.get(event) {
-                    // Update context with event data
-                    if let Some(event_data) = data {
-                        for (key, value) in event_data {
-                            context.set_variable(format!("event.{}", key), value.clone());
-                        }
-                    }
-
-                    // Execute all listeners
-                    for operations in listeners.clone() {
-                        for op in &operations {
-                            self.execute_operation(op, context, state, world)?;
-                        }
-                    }
-                }
-            }
-
-            EffectOperation::ScheduleOperation { delay_seconds: _, operations: _ } => {
-                // TODO: Implement scheduled operations using Bevy's timer system
-                warn!("ScheduleOperation not yet implemented");
-            }
-
-            EffectOperation::Filter { target, predicate } => {
-                // Get collection manager
-                if let Some(mut collections) = world.get_resource_mut::<CollectionManager>() {
-                    if let Some(collection) = collections.get_mut(target) {
-                        // Filter collection using predicate
-                        collection.filter(|item| evaluate_item_predicate(predicate, item));
-                    } else {
-                        warn!("Collection not found: {}", target);
-                    }
-                } else {
-                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
-                }
-            }
-
-            EffectOperation::Remove { target, count, filter, random } => {
-                if let Some(mut collections) = world.get_resource_mut::<CollectionManager>() {
-                    if let Some(collection) = collections.get_mut(target) {
-                        // Apply filter first if provided
-                        if let Some(pred) = filter {
-                            collection.filter(|item| evaluate_item_predicate(pred, item));
-                        }
-
-                        // Remove items
-                        let removed = collection.remove(*count, random.unwrap_or(false));
-
-                        // Store removed items in context
-                        if removed.len() == 1 {
-                            context.set_variable("removed".to_string(), removed[0].clone());
-                        } else {
-                            context.set_variable("removed".to_string(), Value::Array(removed));
-                        }
-                    } else {
-                        warn!("Collection not found: {}", target);
-                    }
-                } else {
-                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
-                }
-            }
-
-            EffectOperation::Append { target, item } => {
-                if let Some(mut collections) = world.get_resource_mut::<CollectionManager>() {
-                    let collection = collections.get_or_create(target);
-                    collection.append(item.clone());
-                } else {
-                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
-                }
-            }
-
-            EffectOperation::Insert { target, index, item } => {
-                if let Some(mut collections) = world.get_resource_mut::<CollectionManager>() {
-                    let collection = collections.get_or_create(target);
-                    collection.insert(*index, item.clone());
-                } else {
-                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
-                }
-            }
-
-            EffectOperation::ForEach { collection: collection_path, operations } => {
-                // Get collection items (clone to avoid borrow conflicts)
-                let items = if let Some(collections) = world.get_resource::<CollectionManager>() {
-                    if let Some(collection) = collections.get(collection_path) {
-                        collection.to_vec()
-                    } else {
-                        warn!("Collection not found: {}", collection_path);
-                        Vec::new()
-                    }
-                } else {
-                    return Err(EffectError::OperationError("CollectionManager not available".to_string()));
-                };
-
-                // Execute operations for each item
-                for (index, item) in items.iter().enumerate() {
-                    // Set iteration variables
-                    context.set_variable("item".to_string(), item.clone());
-                    context.set_variable("index".to_string(), Value::Int(index as i32));
-
-                    // Execute operations
-                    for op in operations {
-                        self.execute_operation(op, context, state, world)?;
-                    }
-                }
-            }
+        // Try control flow operations
+        if let Some(result) = control_flow::execute_control_flow_operation(self, operation, context, state, world) {
+            return result;
         }
 
         Ok(())
+    }
+
+    /// Register an event listener
+    pub fn register_event_listener(&mut self, event: String, operations: Vec<EffectOperation>) {
+        self.event_listeners
+            .entry(event)
+            .or_default()
+            .push(operations);
+    }
+
+    /// Get event listeners (cloned to avoid borrow conflicts)
+    pub fn get_event_listeners(&self, event: &str) -> Option<Vec<Vec<EffectOperation>>> {
+        self.event_listeners.get(event).cloned()
     }
 
     /// Evaluate a predicate against current game state
@@ -339,25 +191,21 @@ impl EffectExecutor {
             }
 
             Predicate::HasTag { tag: _ } => {
-                // TODO: Implement tag checking
                 warn!("HasTag predicate not yet implemented");
                 Ok(false)
             }
 
             Predicate::IsType { card_type: _ } => {
-                // TODO: Implement type checking
                 warn!("IsType predicate not yet implemented");
                 Ok(false)
             }
 
             Predicate::Contains { field: _, value: _ } => {
-                // TODO: Implement contains checking
                 warn!("Contains predicate not yet implemented");
                 Ok(false)
             }
 
             Predicate::Expression { expr: _ } => {
-                // TODO: Implement expression evaluation
                 warn!("Expression predicate not yet implemented");
                 Ok(false)
             }
@@ -496,7 +344,6 @@ mod tests {
     #[test]
     fn test_collection_operations() {
         use crate::collections::{CollectionManager, Collection};
-        use std::collections::HashMap;
 
         let mut world = World::new();
 
@@ -611,5 +458,5 @@ mod tests {
 
 // Include comprehensive effect operation tests
 #[cfg(test)]
-#[path = "effect_executor_tests.rs"]
+#[path = "../effect_executor_tests.rs"]
 mod comprehensive_tests;
