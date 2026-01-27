@@ -8,7 +8,10 @@ pub mod collections;
 pub mod components;
 pub mod resources;
 pub mod cards;
+
+#[cfg(not(target_arch = "wasm32"))]
 pub mod chat;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod twitch;
 
 // Re-export commonly used types

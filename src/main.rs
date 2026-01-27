@@ -11,8 +11,11 @@ mod game_state;
 mod effect_executor;
 mod collections;
 mod ui_config;
+#[cfg(not(target_arch = "wasm32"))]
 mod chat;
+#[cfg(not(target_arch = "wasm32"))]
 mod twitch;
+#[cfg(not(target_arch = "wasm32"))]
 mod chat_plugin;
 mod card_3d;
 mod constants;
@@ -55,6 +58,10 @@ pub struct Args {
 }
 
 fn main() {
+    // Initialize WASM panic hook for better error messages
+    #[cfg(target_arch = "wasm32")]
+    console_error_panic_hook::set_once();
+
     let args = Args::parse();
 
     // Load UI config (use defaults if not provided)
@@ -68,7 +75,9 @@ fn main() {
         ui_config.background_color()
     };
 
+    #[cfg(not(target_arch = "wasm32"))]
     let twitch_channel = args.twitch_channel.clone();
+    #[cfg(not(target_arch = "wasm32"))]
     let chat_threshold = args.chat_threshold;
 
     let mut app = App::new();
@@ -104,7 +113,8 @@ fn main() {
             card_3d::update_card_positions,
         ));
 
-    // Conditionally add chat integration
+    // Conditionally add chat integration (native only)
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(channel) = twitch_channel {
         info!("Enabling Twitch chat integration for channel: {} (threshold: {} votes)", channel, chat_threshold);
         app.add_plugins(chat_plugin::ChatPlugin {
@@ -161,8 +171,7 @@ fn load_quiz(
 }
 
 fn load_cards(mut card_manager: ResMut<CardManager>) {
-    let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-    match runtime.block_on(cards::load_all_cards()) {
+    match cards::load_all_cards() {
         Ok(cards) => {
             info!("Loaded {} cards", cards.len());
             card_manager.available_cards = cards;

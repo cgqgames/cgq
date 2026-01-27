@@ -7,6 +7,7 @@ use crate::components::{Question, ActiveQuestion};
 use crate::resources::{QuizState, Score, GameTimer, CardManager, CardDefinition};
 use crate::ui_config::UiConfig;
 use crate::card_3d::CardRenderTexture;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::chat_plugin::ChatCardVoteTracker;
 
 /// Marker component for UI entities
@@ -14,6 +15,7 @@ use crate::chat_plugin::ChatCardVoteTracker;
 pub struct QuizUI;
 
 /// Main UI system that renders all game UI
+#[allow(unused_variables)]
 pub fn ui_system(
     mut commands: Commands,
     _asset_server: Res<AssetServer>,
@@ -22,6 +24,7 @@ pub fn ui_system(
     timer: Res<GameTimer>,
     ui_config: Res<UiConfig>,
     card_manager: Res<CardManager>,
+    #[cfg(not(target_arch = "wasm32"))]
     _card_vote_tracker: Option<Res<ChatCardVoteTracker>>,
     card_render_texture: Option<Res<CardRenderTexture>>,
     args: Res<crate::Args>,

@@ -61,8 +61,8 @@ pub struct CardVisual {
 }
 
 impl CardSet {
-    pub async fn from_file(path: impl AsRef<Path>) -> Result<Self> {
-        let content = tokio::fs::read_to_string(path).await?;
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
+        let content = std::fs::read_to_string(path)?;
         Ok(serde_yaml::from_str(&content)?)
     }
 
@@ -72,7 +72,7 @@ impl CardSet {
 }
 
 /// Load all card sets from the content directory
-pub async fn load_all_cards() -> Result<Vec<CardDefinition>> {
+pub fn load_all_cards() -> Result<Vec<CardDefinition>> {
     let mut all_cards = Vec::new();
 
     let card_files = vec![
@@ -86,7 +86,7 @@ pub async fn load_all_cards() -> Result<Vec<CardDefinition>> {
     ];
 
     for file_path in card_files {
-        match CardSet::from_file(file_path).await {
+        match CardSet::from_file(file_path) {
             Ok(card_set) => {
                 let count = card_set.cards.len();
                 all_cards.extend(card_set.cards.into_iter().map(card_to_definition));
@@ -146,14 +146,13 @@ pub struct QuestionMetadata {
 }
 
 impl QuestionSet {
-    pub async fn from_file(path: impl AsRef<Path>) -> Result<Self> {
-        let content = tokio::fs::read_to_string(path).await?;
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
+        let content = std::fs::read_to_string(path)?;
         Ok(serde_yaml::from_str(&content)?)
     }
 }
 
 /// Card set with generic effects (JSON format)
-/// TODO: Alternative JSON format for future use
 #[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GenericCardSet {
@@ -181,8 +180,8 @@ pub struct GenericCard {
 
 impl GenericCardSet {
     /// Load from JSON file
-    pub async fn from_json_file(path: impl AsRef<Path>) -> Result<Self> {
-        let content = tokio::fs::read_to_string(path).await?;
+    pub fn from_json_file(path: impl AsRef<Path>) -> Result<Self> {
+        let content = std::fs::read_to_string(path)?;
         Ok(serde_json::from_str(&content)?)
     }
 
@@ -193,8 +192,9 @@ impl GenericCardSet {
 }
 
 /// Load generic cards from JSON
-pub async fn load_generic_cards(path: impl AsRef<Path>) -> Result<Vec<GenericCard>> {
-    let card_set = GenericCardSet::from_json_file(path).await?;
+#[allow(dead_code)]
+pub fn load_generic_cards(path: impl AsRef<Path>) -> Result<Vec<GenericCard>> {
+    let card_set = GenericCardSet::from_json_file(path)?;
     Ok(card_set.cards)
 }
 
