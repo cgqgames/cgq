@@ -1,9 +1,5 @@
-//! Collection management for the effect system.
-//!
-//! Provides collection types and predicates for effect operations like
-//! Filter, Remove, Append, and Insert. Used by effect_executor and tested,
-//! but the system is not yet integrated into the main game loop.
-#![allow(dead_code)]
+//! Collection management for the effect system. `Filter`/`Remove`/`Append`/
+//! `Insert` operations read and write collections stored here by path.
 
 use bevy::prelude::*;
 use crate::effect::{Value, Predicate};
@@ -279,10 +275,6 @@ pub fn evaluate_item_predicate(
             !evaluate_item_predicate(predicate, item)
         }
 
-        Predicate::Expression { expr: _ } => {
-            warn!("Expression predicates not yet implemented");
-            false
-        }
     }
 }
 

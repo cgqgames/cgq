@@ -75,7 +75,6 @@ pub fn ui_system(
                 parent,
                 &ui_config.cards_grid,
                 &deployed_cards,
-                &card_manager.available_cards,
                 card_render_texture.as_deref(),
             );
         });

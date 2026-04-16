@@ -1,0 +1,19 @@
+id = "time_penalty"
+name = "Time Penalty"
+type = "negative"
+permanence = "one_shot"
+vote_requirement = 0
+cost = 0
+description = "Removes 30 seconds from the timer"
+tags = ["negative", "time"]
+
+[[effects]]
+id = "remove_time"
+type = "add_time"
+seconds = -30
+timing = "after"
+priority = 50
+
+[[effects.intercepts]]
+component = "Timer"
+operation = "get_remaining"

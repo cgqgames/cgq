@@ -1,8 +1,4 @@
 //! Effect execution engine for processing card effects.
-//!
-//! This module handles execution of effect operations defined in effect.rs.
-//! The system is fully tested but not yet integrated into the main game loop.
-#![allow(dead_code)]
 
 mod value_ops;
 mod flag_ops;
@@ -44,14 +40,9 @@ impl std::fmt::Display for EffectError {
 impl std::error::Error for EffectError {}
 
 /// Executes card effects by processing primitive operations
+#[derive(Resource, Default)]
 pub struct EffectExecutor {
     event_listeners: HashMap<String, Vec<Vec<EffectOperation>>>,
-}
-
-impl Default for EffectExecutor {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl EffectExecutor {
@@ -190,24 +181,25 @@ impl EffectExecutor {
                 Ok(!self.evaluate_predicate(predicate, context, state, world)?)
             }
 
-            Predicate::HasTag { tag: _ } => {
-                warn!("HasTag predicate not yet implemented");
-                Ok(false)
+            Predicate::HasTag { tag } => {
+                Err(EffectError::PredicateError(format!(
+                    "HasTag('{}') not implemented at state level (only inside collection Filter/Remove)",
+                    tag
+                )))
             }
 
-            Predicate::IsType { card_type: _ } => {
-                warn!("IsType predicate not yet implemented");
-                Ok(false)
+            Predicate::IsType { card_type } => {
+                Err(EffectError::PredicateError(format!(
+                    "IsType('{}') not implemented at state level (only inside collection Filter/Remove)",
+                    card_type
+                )))
             }
 
-            Predicate::Contains { field: _, value: _ } => {
-                warn!("Contains predicate not yet implemented");
-                Ok(false)
-            }
-
-            Predicate::Expression { expr: _ } => {
-                warn!("Expression predicate not yet implemented");
-                Ok(false)
+            Predicate::Contains { field, .. } => {
+                Err(EffectError::PredicateError(format!(
+                    "Contains('{}') not implemented at state level (only inside collection Filter/Remove)",
+                    field
+                )))
             }
         }
     }

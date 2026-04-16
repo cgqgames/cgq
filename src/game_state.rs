@@ -1,11 +1,8 @@
-//! Game state management for the effect system.
-//!
-//! Provides path-based access to game state (timer, score, etc.) for effects.
-//! Used by effect_executor and tested, but the system is not yet integrated
-//! into the main game loop.
-#![allow(dead_code)]
+//! Path-based access to game state (timer, score, question) for the
+//! effect executor.
 
 use bevy::prelude::*;
+use crate::components::{ActiveQuestion, Question};
 use crate::effect::Value;
 use crate::resources::{GameTimer, Score, CardManager};
 use std::collections::HashMap;
@@ -67,11 +64,9 @@ impl GameState {
                     .map(|score| Value::Int(score.passing_grade))
             }
 
-            // Question paths
+            // Question paths — resolved by querying the ActiveQuestion entity.
             ["question", "points"] => {
-                // Need to query active question
-                // For now, return None - will be implemented when we add active question tracking
-                None
+                active_question_points(world).map(Value::Int)
             }
 
             // Card paths
@@ -135,6 +130,14 @@ impl GameState {
                         score.current = amount;
                         return true;
                     }
+                }
+                false
+            }
+
+            // Question paths
+            ["question", "points"] => {
+                if let Some(amount) = value.as_int() {
+                    return set_active_question_points(world, amount);
                 }
                 false
             }
@@ -218,6 +221,24 @@ impl GameState {
     /// Clear all variables
     pub fn clear_variables(&mut self) {
         self.variables.clear();
+    }
+}
+
+fn active_question_points(world: &World) -> Option<i32> {
+    world
+        .iter_entities()
+        .find(|e| e.contains::<ActiveQuestion>())
+        .and_then(|e| e.get::<Question>())
+        .map(|q| q.points)
+}
+
+fn set_active_question_points(world: &mut World, points: i32) -> bool {
+    let mut query = world.query_filtered::<&mut Question, With<ActiveQuestion>>();
+    if let Some(mut q) = query.iter_mut(world).next() {
+        q.points = points;
+        true
+    } else {
+        false
     }
 }
 

@@ -64,39 +64,7 @@ pub fn setup_3d_cards(
         RenderLayers::layer(1),
     ));
 
-    // Add strong directional lighting for the cards
-    commands.spawn((
-        DirectionalLightBundle {
-            directional_light: DirectionalLight {
-                illuminance: 10000.0,
-                shadows_enabled: false,
-                ..default()
-            },
-            transform: Transform::from_xyz(0.0, 1.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
-            ..default()
-        },
-        RenderLayers::layer(1),
-    ));
-
-    // Additional point light for extra brightness
-    commands.spawn((
-        PointLightBundle {
-            point_light: PointLight {
-                intensity: 8000.0,
-                shadows_enabled: false,
-                ..default()
-            },
-            transform: Transform::from_xyz(0.0, 0.0, 4.0),
-            ..default()
-        },
-        RenderLayers::layer(1),
-    ));
-
-    // Strong ambient light
-    commands.insert_resource(AmbientLight {
-        color: Color::WHITE,
-        brightness: 1.0,
-    });
+    // Cards use unlit materials — no scene lights needed.
 }
 
 /// System to spawn 3D cards when they are loaded
@@ -105,34 +73,27 @@ pub fn spawn_cards_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
-    asset_server: Res<AssetServer>,
     card_manager: Res<crate::resources::CardManager>,
     mut spawned_cards: ResMut<SpawnedCards>,
 ) {
-    for (index, card) in card_manager.available_cards.iter().take(MAX_DISPLAYED_CARDS).enumerate() {
-        if !spawned_cards.card_ids.contains(&card.id) {
-            // 2x2 grid layout centered at origin
-            let row = index / 2;
-            let col = index % 2;
-
-            // Grid centered at (0, 0, 0)
-            let x_offset = (col as f32 - 0.5) * CARD_GRID_X_SPACING;
-            let y_offset = (0.5 - row as f32) * CARD_GRID_Y_SPACING;
-
-            let position = Vec3::new(x_offset, y_offset, 0.0);
-
-            spawn_card_3d(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                &mut images,
-                &asset_server,
-                card,
-                position,
-            );
-
-            spawned_cards.card_ids.push(card.id.clone());
+    for (index, card) in card_manager
+        .available_cards
+        .iter()
+        .take(MAX_DISPLAYED_CARDS)
+        .enumerate()
+    {
+        if spawned_cards.card_ids.contains(&card.id) {
+            continue;
         }
+
+        let row = index / 2;
+        let col = index % 2;
+        let x_offset = (col as f32 - 0.5) * CARD_GRID_X_SPACING;
+        let y_offset = (0.5 - row as f32) * CARD_GRID_Y_SPACING;
+        let position = Vec3::new(x_offset, y_offset, 0.0);
+
+        spawn_card_3d(&mut commands, &mut meshes, &mut materials, &mut images, card, position);
+        spawned_cards.card_ids.push(card.id.clone());
     }
 }
 

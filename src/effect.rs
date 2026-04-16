@@ -1,9 +1,8 @@
 //! Effect system types for card effects.
 //!
-//! This module defines the core types used by the effect execution system.
-//! Types are used by effect_executor and tested, but the system is not yet
-//! integrated into the main game loop.
-#![allow(dead_code)]
+//! Defines the primitive `EffectOperation` vocabulary, the `Predicate` tree,
+//! and the `CardEffect` record. `card_templates` expands human-friendly YAML
+//! shorthand into these types; `effect_executor` consumes them.
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -112,10 +111,6 @@ pub enum Predicate {
     /// Boolean NOT
     Not {
         predicate: Box<Predicate>,
-    },
-    /// Custom expression (for advanced users)
-    Expression {
-        expr: String,
     },
 }
 

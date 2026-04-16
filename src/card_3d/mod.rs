@@ -1,5 +1,4 @@
 mod components;
-mod texture;
 mod mesh;
 mod systems;
 

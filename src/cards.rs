@@ -1,23 +1,17 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bevy::log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::card_templates::{expand, YamlCardEffect};
 use crate::components::CardType;
 use crate::resources::CardDefinition;
-use crate::effect::CardEffect as GenericCardEffect;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CardSet {
-    pub metadata: CardMetadata,
-    pub cards: Vec<Card>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CardMetadata {
-    pub title: String,
-    pub description: String,
-    pub version: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Permanence {
+    Permanent,
+    OneShot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,32 +20,15 @@ pub struct Card {
     pub name: String,
     #[serde(rename = "type")]
     pub card_type: CardType,
-    pub permanence: String,
+    pub permanence: Permanence,
     pub vote_requirement: usize,
     pub cost: i32,
     pub description: Option<String>,
+    #[serde(default)]
     pub tags: Vec<String>,
-    pub effects: Vec<CardEffect>,
+    pub effects: Vec<YamlCardEffect>,
     #[serde(default)]
     pub visual: CardVisual,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CardEffect {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub effect_type: String,
-    #[serde(flatten)]
-    pub parameters: serde_json::Value,
-    pub intercepts: Vec<InterceptPattern>,
-    pub timing: String,
-    pub priority: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InterceptPattern {
-    pub component: String,
-    pub operation: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -60,79 +37,53 @@ pub struct CardVisual {
     pub sound: Option<String>,
 }
 
-impl CardSet {
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        Ok(serde_yaml::from_str(&content)?)
-    }
+/// Discover and load all `*.toml` card files in a directory.
+pub fn load_cards_from_dir(dir: &Path) -> Result<Vec<CardDefinition>> {
+    let entries = std::fs::read_dir(dir)
+        .with_context(|| format!("Cannot read card directory: {}", dir.display()))?;
 
-    pub fn from_yaml(yaml: &str) -> Result<Self> {
-        Ok(serde_yaml::from_str(yaml)?)
-    }
-}
-
-/// Load all card sets from the content directory
-pub fn load_all_cards() -> Result<Vec<CardDefinition>> {
-    let mut all_cards = Vec::new();
-
-    let card_files = vec![
-        "content/palestinian-quiz/cards/resistance.yml",
-        "content/palestinian-quiz/cards/palestinian.yml",
-        "content/palestinian-quiz/cards/idf.yml",
-        "content/palestinian-quiz/cards/politics.yml",
-        "content/palestinian-quiz/cards/hasbara.yml",
-        "content/palestinian-quiz/cards/ceasefire.yml",
-        "content/palestinian-quiz/cards/other.yml",
-    ];
-
-    for file_path in card_files {
-        match CardSet::from_file(file_path) {
-            Ok(card_set) => {
-                let count = card_set.cards.len();
-                all_cards.extend(card_set.cards.into_iter().map(card_to_definition));
-                info!("Loaded {} cards from {}", count, file_path);
-            }
-            Err(e) => {
-                warn!("Failed to load cards from {}: {}", file_path, e);
+    let mut cards = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        if path.extension().is_some_and(|ext| ext == "toml") {
+            match load_card_file(&path) {
+                Ok(card) => {
+                    info!("Loaded card '{}' from {}", card.name, path.display());
+                    cards.push(card);
+                }
+                Err(e) => {
+                    warn!("Failed to load card from {}: {}", path.display(), e);
+                }
             }
         }
     }
 
-    Ok(all_cards)
+    cards.sort_by(|a, b| a.id.cmp(&b.id));
+    info!("Loaded {} cards from {}", cards.len(), dir.display());
+    Ok(cards)
+}
+
+fn load_card_file(path: &Path) -> Result<CardDefinition> {
+    let content = std::fs::read_to_string(path)?;
+    let card: Card = toml::from_str(&content)?;
+    Ok(card_to_definition(card))
 }
 
 fn card_to_definition(card: Card) -> CardDefinition {
-    use crate::resources::CardEffectDefinition;
-
-    // Prefer clean backgrounds (without text) if available
-    let image_path = card.visual.image.map(|img| {
-        // Try background version first (based on card ID)
-        let bg_path = format!("cards-backgrounds/{}.png", card.id);
-        let _full_path = format!("cards/{}", img);
-
-        // Check if background exists by trying both paths
-        // AssetServer will handle the actual file existence check
-        // For now, always try background first
-        bg_path
-    });
-
     CardDefinition {
         id: card.id,
         name: card.name,
         card_type: card.card_type,
+        permanence: card.permanence,
         description: card.description,
         cost: card.cost,
         vote_requirement: card.vote_requirement,
-        effects: card.effects.into_iter().map(|e| CardEffectDefinition {
-            effect_type: e.effect_type,
-            priority: e.priority,
-            parameters: e.parameters,
-        }).collect(),
-        image_path,
+        effects: card.effects.into_iter().map(expand).collect(),
     }
 }
 
-/// Load questions from YAML
+// -- Questions (still YAML) --------------------------------------------------
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QuestionSet {
     pub metadata: Option<QuestionMetadata>,
@@ -149,107 +100,5 @@ impl QuestionSet {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;
         Ok(serde_yaml::from_str(&content)?)
-    }
-}
-
-/// Card set with generic effects (JSON format)
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GenericCardSet {
-    pub metadata: CardMetadata,
-    pub cards: Vec<GenericCard>,
-}
-
-/// Card definition with generic effects
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GenericCard {
-    pub id: String,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub card_type: CardType,
-    pub permanence: String,
-    pub vote_requirement: usize,
-    pub cost: i32,
-    pub description: Option<String>,
-    pub tags: Vec<String>,
-    pub effects: Vec<GenericCardEffect>,
-    #[serde(default)]
-    pub visual: CardVisual,
-}
-
-impl GenericCardSet {
-    /// Load from JSON file
-    pub fn from_json_file(path: impl AsRef<Path>) -> Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&content)?)
-    }
-
-    /// Load from JSON string
-    pub fn from_json(json: &str) -> Result<Self> {
-        Ok(serde_json::from_str(json)?)
-    }
-}
-
-/// Load generic cards from JSON
-#[allow(dead_code)]
-pub fn load_generic_cards(path: impl AsRef<Path>) -> Result<Vec<GenericCard>> {
-    let card_set = GenericCardSet::from_json_file(path)?;
-    Ok(card_set.cards)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_generic_card_deserialization() {
-        let json = r#"{
-            "metadata": {
-                "title": "Test Cards",
-                "description": "Test card set",
-                "version": "1.0"
-            },
-            "cards": [
-                {
-                    "id": "test_card",
-                    "name": "Test Card",
-                    "type": "resistance",
-                    "permanence": "permanent",
-                    "vote_requirement": 3,
-                    "cost": 5,
-                    "description": "A test card",
-                    "tags": ["test"],
-                    "effects": [
-                        {
-                            "id": "add_time",
-                            "operations": [
-                                {
-                                    "type": "add",
-                                    "target": "timer.remaining",
-                                    "amount": 60
-                                }
-                            ],
-                            "timing": "after",
-                            "priority": 100
-                        }
-                    ],
-                    "visual": {
-                        "image": "test.png"
-                    }
-                }
-            ]
-        }"#;
-
-        let result = GenericCardSet::from_json(json);
-        assert!(result.is_ok());
-
-        let card_set = result.unwrap();
-        assert_eq!(card_set.cards.len(), 1);
-
-        let card = &card_set.cards[0];
-        assert_eq!(card.id, "test_card");
-        assert_eq!(card.effects.len(), 1);
-        assert_eq!(card.effects[0].operations.len(), 1);
     }
 }

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod components;
 mod resources;
@@ -18,14 +18,17 @@ mod twitch;
 #[cfg(not(target_arch = "wasm32"))]
 mod chat_plugin;
 mod card_3d;
+mod card_templates;
 mod constants;
+mod deploy;
 mod ui;
 
+use collections::CollectionManager;
 use components::*;
+use effect_executor::EffectExecutor;
+use game_state::GameState;
 use resources::*;
 use systems::*;
-use game_state::GameState;
-use collections::CollectionManager;
 use ui_config::UiConfig;
 
 #[derive(Parser, Debug, Resource, Clone)]
@@ -33,10 +36,10 @@ use ui_config::UiConfig;
 #[command(about = "Card Game Quiz Framework - A Bevy-based quiz game engine", long_about = None)]
 pub struct Args {
     /// Path to the quiz YAML file
-    #[arg(short, long, default_value = "content/palestinian-quiz/questions/test.yml")]
+    #[arg(short, long, default_value = "examples/sample-quiz/questions.yml")]
     quiz: PathBuf,
 
-    /// Path to cards directory (optional)
+    /// Directory of card TOML files (defaults to <quiz-dir>/cards/)
     #[arg(short, long)]
     cards: Option<PathBuf>,
 
@@ -100,14 +103,17 @@ fn main() {
         .init_resource::<CardManager>()
         .init_resource::<GameState>()
         .init_resource::<CollectionManager>()
+        .init_resource::<EffectExecutor>()
+        .init_resource::<deploy::DeployedEffectsApplied>()
         .init_resource::<card_3d::SpawnedCards>()
         // Systems
         .add_systems(Startup, (setup, load_quiz, load_cards, card_3d::setup_3d_cards))
         .add_systems(Update, (
             quiz_system,
-            card_effect_system,
             timer_system,
             input_system,
+            deploy::apply_deployed_card_effects,
+            deploy::expire_one_shot_cards,
             ui::ui_system,
             card_3d::spawn_cards_system,
             card_3d::update_card_positions,
@@ -170,14 +176,22 @@ fn load_quiz(
     }
 }
 
-fn load_cards(mut card_manager: ResMut<CardManager>) {
-    match cards::load_all_cards() {
+fn load_cards(mut card_manager: ResMut<CardManager>, args: Res<Args>) {
+    let cards_dir = args
+        .cards
+        .clone()
+        .unwrap_or_else(|| args.quiz.parent().unwrap_or(Path::new(".")).join("cards"));
+
+    match cards::load_cards_from_dir(&cards_dir) {
         Ok(cards) => {
-            info!("Loaded {} cards", cards.len());
             card_manager.available_cards = cards;
         }
         Err(e) => {
-            warn!("Failed to load cards: {}. Game will continue without cards.", e);
+            warn!(
+                "Failed to load cards from {}: {}. Game will continue without cards.",
+                cards_dir.display(),
+                e
+            );
         }
     }
 }

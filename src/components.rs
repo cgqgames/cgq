@@ -28,7 +28,8 @@ impl Question {
     }
 
     pub fn is_correct(&self, answer: &str) -> bool {
-        self.options.iter()
+        self.options
+            .iter()
             .any(|opt| opt.id == answer.to_lowercase() && opt.correct)
     }
 }
@@ -36,16 +37,6 @@ impl Question {
 /// Marker component for the current active question
 #[derive(Component)]
 pub struct ActiveQuestion;
-
-/// Represents a deployed card in the game
-/// TODO: Future feature for more detailed card tracking
-#[allow(dead_code)]
-#[derive(Component, Clone, Debug)]
-pub struct DeployedCard {
-    pub card_id: String,
-    pub name: String,
-    pub card_type: CardType,
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -59,41 +50,4 @@ pub enum CardType {
     Hasbara,
     Ceasefire,
     Other,
-}
-
-/// Card effect components - each card effect type is its own component
-/// This allows Bevy's ECS to efficiently query for active effects
-
-#[derive(Component, Clone, Debug)]
-pub struct EliminateWrongAnswers {
-    pub count: usize,
-    pub priority: i32,
-}
-
-#[derive(Component, Clone, Debug)]
-pub struct ModifyTime {
-    pub seconds: i64,
-    pub priority: i32,
-}
-
-#[derive(Component, Clone, Debug)]
-pub struct ModifyPoints {
-    pub points: i32,
-    pub priority: i32,
-}
-
-#[derive(Component, Clone, Debug)]
-pub struct MultiplyPoints {
-    pub multiplier: f32,
-    pub priority: i32,
-}
-
-/// Player answer submission
-/// TODO: Future feature for tracking individual player answers
-#[allow(dead_code)]
-#[derive(Component)]
-pub struct PlayerAnswer {
-    pub player_id: String,
-    pub username: String,
-    pub answer: String,
 }

@@ -1,134 +1,46 @@
 use bevy::prelude::*;
-use crate::constants::{CARD_3D_WIDTH, CARD_3D_HEIGHT, CARD_3D_THICKNESS};
-use crate::resources::CardDefinition;
-use super::components::Card3D;
-use super::texture::generate_card_texture;
+use bevy::render::{
+    mesh::{Indices, PrimitiveTopology},
+    render_asset::RenderAssetUsages,
+    render_resource::{Extent3d, TextureDimension, TextureFormat},
+    view::RenderLayers,
+};
 
-/// Spawn a 3D card mesh
+use crate::constants::{CARD_3D_HEIGHT, CARD_3D_THICKNESS, CARD_3D_WIDTH};
+use crate::resources::CardDefinition;
+
+use super::components::Card3D;
+
+const CARD_TEXTURE_DIR: &str = "share/textures/cards";
+
+/// Spawn a 3D card mesh textured with the prebaked card PNG.
 pub fn spawn_card_3d(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     images: &mut ResMut<Assets<Image>>,
-    _asset_server: &Res<AssetServer>,
     card: &CardDefinition,
     position: Vec3,
 ) {
-    use bevy::render::mesh::{Indices, PrimitiveTopology};
-    use bevy::render::render_asset::RenderAssetUsages;
+    let mesh_handle = meshes.add(build_card_mesh());
 
-    // Create a thin 3D card mesh (for flip animations and back texturing)
-    let width = CARD_3D_WIDTH;
-    let height = CARD_3D_HEIGHT;
-    let thickness = CARD_3D_THICKNESS;
+    let texture_handle = load_card_texture(images, &card.name).unwrap_or_else(|| {
+        warn!("No texture for card '{}', falling back to white", card.name);
+        images.add(white_pixel())
+    });
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
-
-    let hw = width / 2.0;
-    let hh = height / 2.0;
-    let ht = thickness / 2.0;
-
-    // 24 vertices (4 per face, 6 faces) for proper normals and UVs
-    let vertices = vec![
-        // Front face (facing +Z) - 0-3
-        [-hw, -hh,  ht], [hw, -hh,  ht], [hw,  hh,  ht], [-hw,  hh,  ht],
-        // Back face (facing -Z) - 4-7
-        [hw, -hh, -ht], [-hw, -hh, -ht], [-hw,  hh, -ht], [hw,  hh, -ht],
-        // Top edge (facing +Y) - 8-11
-        [-hw,  hh,  ht], [hw,  hh,  ht], [hw,  hh, -ht], [-hw,  hh, -ht],
-        // Bottom edge (facing -Y) - 12-15
-        [-hw, -hh, -ht], [hw, -hh, -ht], [hw, -hh,  ht], [-hw, -hh,  ht],
-        // Right edge (facing +X) - 16-19
-        [hw, -hh,  ht], [hw, -hh, -ht], [hw,  hh, -ht], [hw,  hh,  ht],
-        // Left edge (facing -X) - 20-23
-        [-hw, -hh, -ht], [-hw, -hh,  ht], [-hw,  hh,  ht], [-hw,  hh, -ht],
-    ];
-
-    // UVs - front face texture maps the card texture
-    let uvs = vec![
-        // Front face
-        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
-        // Back face - flipped for card back texture
-        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
-        // Top edge
-        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
-        // Bottom edge
-        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
-        // Right edge
-        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
-        // Left edge
-        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
-    ];
-
-    // Normals for each face
-    let normals = vec![
-        // Front face
-        [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0],
-        // Back face
-        [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0],
-        // Top edge
-        [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [0.0, 1.0, 0.0],
-        // Bottom edge
-        [0.0, -1.0, 0.0], [0.0, -1.0, 0.0], [0.0, -1.0, 0.0], [0.0, -1.0, 0.0],
-        // Right edge
-        [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0],
-        // Left edge
-        [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [-1.0, 0.0, 0.0],
-    ];
-
-    // Triangle indices for all 6 faces
-    #[rustfmt::skip]
-    let indices = vec![
-        // Front face
-        0, 1, 2,  0, 2, 3,
-        // Back face
-        4, 5, 6,  4, 6, 7,
-        // Top edge
-        8, 9, 10,  8, 10, 11,
-        // Bottom edge
-        12, 13, 14,  12, 14, 15,
-        // Right edge
-        16, 17, 18,  16, 18, 19,
-        // Left edge
-        20, 21, 22,  20, 22, 23,
-    ];
-
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_indices(Indices::U32(indices));
-
-    let card_mesh = meshes.add(mesh);
-
-    // Generate composite card texture with text baked in
-    let artwork_path = card.image_path.as_deref();
-    let composite_image = generate_card_texture(card, artwork_path);
-
-    // Add the composite texture to assets
-    let texture_handle = images.add(composite_image);
-
-    // Create PBR material with composite texture
     let material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
         base_color_texture: Some(texture_handle),
-        emissive: Color::srgb(0.0, 0.0, 0.0).into(),
-        perceptual_roughness: 0.8,
-        metallic: 0.0,
-        reflectance: 0.2,
-        unlit: false,
+        unlit: true,
         ..default()
     });
 
-    use bevy::render::view::RenderLayers;
-
-    // No rotation needed - custom UVs handle orientation
-    let transform = Transform::from_translation(position);
-
     commands.spawn((
         PbrBundle {
-            mesh: card_mesh,
+            mesh: mesh_handle,
             material,
-            transform,
+            transform: Transform::from_translation(position),
             ..default()
         },
         Card3D {
@@ -136,4 +48,97 @@ pub fn spawn_card_3d(
         },
         RenderLayers::layer(1),
     ));
+}
+
+fn build_card_mesh() -> Mesh {
+    let hw = CARD_3D_WIDTH / 2.0;
+    let hh = CARD_3D_HEIGHT / 2.0;
+    let ht = CARD_3D_THICKNESS / 2.0;
+
+    #[rustfmt::skip]
+    let vertices = vec![
+        [-hw, -hh,  ht], [ hw, -hh,  ht], [ hw,  hh,  ht], [-hw,  hh,  ht], // front
+        [ hw, -hh, -ht], [-hw, -hh, -ht], [-hw,  hh, -ht], [ hw,  hh, -ht], // back
+        [-hw,  hh,  ht], [ hw,  hh,  ht], [ hw,  hh, -ht], [-hw,  hh, -ht], // top
+        [-hw, -hh, -ht], [ hw, -hh, -ht], [ hw, -hh,  ht], [-hw, -hh,  ht], // bottom
+        [ hw, -hh,  ht], [ hw, -hh, -ht], [ hw,  hh, -ht], [ hw,  hh,  ht], // right
+        [-hw, -hh, -ht], [-hw, -hh,  ht], [-hw,  hh,  ht], [-hw,  hh, -ht], // left
+    ];
+
+    #[rustfmt::skip]
+    let uvs = vec![
+        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
+        [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0],
+        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0],
+    ];
+
+    #[rustfmt::skip]
+    let normals = vec![
+        [0.0, 0.0,  1.0]; 4
+    ].into_iter()
+        .chain([[0.0, 0.0, -1.0]; 4])
+        .chain([[0.0,  1.0, 0.0]; 4])
+        .chain([[0.0, -1.0, 0.0]; 4])
+        .chain([[ 1.0, 0.0, 0.0]; 4])
+        .chain([[-1.0, 0.0, 0.0]; 4])
+        .collect::<Vec<_>>();
+
+    #[rustfmt::skip]
+    let indices = vec![
+        0, 1, 2,  0, 2, 3,
+        4, 5, 6,  4, 6, 7,
+        8, 9, 10, 8, 10, 11,
+        12, 13, 14, 12, 14, 15,
+        16, 17, 18, 16, 18, 19,
+        20, 21, 22, 20, 22, 23,
+    ];
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+fn load_card_texture(images: &mut Assets<Image>, card_name: &str) -> Option<Handle<Image>> {
+    let path = format!("{}/{}.png", CARD_TEXTURE_DIR, card_name);
+    let bytes = std::fs::read(&path)
+        .inspect_err(|e| warn!("Failed to read {}: {}", path, e))
+        .ok()?;
+    let rgba = image::load_from_memory(&bytes)
+        .inspect_err(|e| warn!("Failed to decode {}: {}", path, e))
+        .ok()?
+        .to_rgba8();
+
+    let (width, height) = rgba.dimensions();
+    let image = Image::new(
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        rgba.into_raw(),
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    Some(images.add(image))
+}
+
+fn white_pixel() -> Image {
+    Image::new(
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        vec![255, 255, 255, 255],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    )
 }

@@ -1,6 +1,7 @@
 // CGQ - Card Game Quiz Framework
 // A Bevy-based generic game engine with data-driven card effects
 
+pub mod card_templates;
 pub mod effect;
 pub mod effect_executor;
 pub mod game_state;
@@ -15,6 +16,7 @@ pub mod chat;
 pub mod twitch;
 
 // Re-export commonly used types
+pub use card_templates::{expand, YamlCardEffect};
 pub use effect::{CardEffect, EffectOperation, Predicate, Value, EffectContext, EffectTiming};
 pub use effect_executor::EffectExecutor;
 pub use game_state::GameState;

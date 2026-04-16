@@ -1,0 +1,22 @@
+id = "double_points"
+name = "Double Points"
+type = "palestinian"
+permanence = "permanent"
+vote_requirement = 3
+cost = 8
+description = "Doubles points for correct answers"
+tags = ["helpful", "points"]
+
+[[effects]]
+id = "multiply_points"
+type = "multiply_points"
+multiplier = 2.0
+timing = "after"
+priority = 75
+
+[[effects.intercepts]]
+component = "Score"
+operation = "get"
+
+[visual]
+image = "double_points.png"

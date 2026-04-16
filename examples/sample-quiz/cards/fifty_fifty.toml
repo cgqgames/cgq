@@ -1,0 +1,23 @@
+id = "fifty_fifty"
+name = "50/50"
+type = "resistance"
+permanence = "permanent"
+vote_requirement = 2
+cost = 5
+description = "Eliminates two wrong answers from the question"
+tags = ["helpful", "eliminate"]
+
+[[effects]]
+id = "eliminate_two"
+type = "eliminate_wrong_answer"
+count = 2
+timing = "after"
+priority = 100
+
+[[effects.intercepts]]
+component = "Question"
+operation = "get_options"
+
+[visual]
+image = "fifty_fifty.png"
+sound = "eliminate.mp3"

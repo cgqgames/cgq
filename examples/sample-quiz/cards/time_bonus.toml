@@ -1,0 +1,23 @@
+id = "time_bonus"
+name = "Time Bonus"
+type = "resistance"
+permanence = "permanent"
+vote_requirement = 3
+cost = 7
+description = "Adds 30 seconds to the timer"
+tags = ["helpful", "time"]
+
+[[effects]]
+id = "add_time"
+type = "add_time"
+seconds = 30
+timing = "after"
+priority = 50
+
+[[effects.intercepts]]
+component = "Timer"
+operation = "get_remaining"
+
+[visual]
+image = "time_bonus.png"
+sound = "time_extend.mp3"

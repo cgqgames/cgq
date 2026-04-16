@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use std::time::Duration;
 
+use crate::cards::Permanence;
+use crate::effect::CardEffect;
+
 /// Global quiz state
 #[derive(Resource, Default)]
 pub struct QuizState {
@@ -40,7 +43,7 @@ impl Default for Score {
     fn default() -> Self {
         Self {
             current: 0,
-            passing_grade: 6, // Default passing grade
+            passing_grade: 6,
             correct_answers: 0,
             total_answered: 0,
         }
@@ -54,22 +57,17 @@ pub struct CardManager {
     pub deployed_card_ids: Vec<String>,
 }
 
-/// Card definition loaded from YAML
+/// Card definition loaded from YAML.
+/// Effects are stored as fully-expanded operation trees — the YAML shorthand
+/// is translated at load time by `card_templates::expand`.
 #[derive(Clone, Debug)]
 pub struct CardDefinition {
     pub id: String,
     pub name: String,
     pub card_type: crate::components::CardType,
+    pub permanence: Permanence,
     pub description: Option<String>,
     pub cost: i32,
     pub vote_requirement: usize,
-    pub effects: Vec<CardEffectDefinition>,
-    pub image_path: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-pub struct CardEffectDefinition {
-    pub effect_type: String,
-    pub priority: i32,
-    pub parameters: serde_json::Value,
+    pub effects: Vec<CardEffect>,
 }

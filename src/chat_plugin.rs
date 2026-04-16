@@ -225,84 +225,69 @@ impl Plugin for ChatPlugin {
     }
 }
 
-/// System that checks if consensus is reached and submits the answer
+/// System that checks if consensus is reached and submits the answer.
+/// Point/timer card effects have already mutated game state via the deploy
+/// system, so we just read `question.points` directly.
 pub fn check_answer_consensus(
-    mut commands: Commands,
     config: Res<ChatConsensusConfig>,
     mut answer_tracker: ResMut<ChatAnswerTracker>,
     mut quiz_state: ResMut<QuizState>,
     mut score: ResMut<Score>,
     questions: Query<&Question, With<ActiveQuestion>>,
-    add_points_effects: Query<(Entity, &crate::components::ModifyPoints)>,
-    multiply_points_effects: Query<(Entity, &crate::components::MultiplyPoints)>,
 ) {
     if !quiz_state.game_started || quiz_state.paused || quiz_state.game_complete {
         return;
     }
 
-    // Check if we have enough votes
-    let total_votes = answer_tracker.total_votes();
-    if total_votes < config.answer_threshold {
+    if answer_tracker.total_votes() < config.answer_threshold {
         return;
     }
 
-    // Get consensus answer
-    if let Some((answer, count)) = answer_tracker.get_consensus() {
-        info!("Chat consensus reached: {} with {} votes (threshold: {})",
-              answer, count, config.answer_threshold);
+    let Some((answer, count)) = answer_tracker.get_consensus() else { return };
+    info!(
+        "Chat consensus reached: {} with {} votes (threshold: {})",
+        answer, count, config.answer_threshold
+    );
 
-        // Submit the answer
-        if let Ok(question) = questions.get_single() {
-            let correct = question.is_correct(&answer);
+    let Ok(question) = questions.get_single() else { return };
 
-            if correct {
-                let mut points = question.points;
-
-                // Apply point addition effects
-                for (entity, effect) in add_points_effects.iter() {
-                    points += effect.points;
-                    info!("  └─ Applied add_points: +{}", effect.points);
-                    commands.entity(entity).despawn();
-                }
-
-                // Apply point multiplication effects
-                for (entity, effect) in multiply_points_effects.iter() {
-                    points = (points as f32 * effect.multiplier) as i32;
-                    info!("  └─ Applied multiply_points: x{}", effect.multiplier);
-                    commands.entity(entity).despawn();
-                }
-
-                score.current += points;
-                score.correct_answers += 1;
-                info!("✅ Chat answered correctly! +{} points. Score: {}",
-                      points, score.current);
-            } else {
-                info!("❌ Chat answered incorrectly! Correct answer: {:?}",
-                      question.correct_answer().map(|o| &o.id));
-            }
-
-            score.total_answered += 1;
-
-            // Auto-advance to next question
-            quiz_state.current_question_index += 1;
-
-            if quiz_state.current_question_index >= quiz_state.total_questions {
-                quiz_state.game_complete = true;
-                info!("🏁 Quiz complete! Final score: {} / {}",
-                      score.current, score.passing_grade);
-            } else {
-                info!("Moving to question {}", quiz_state.current_question_index + 1);
-            }
-
-            // Reset tracker for next question
-            answer_tracker.reset();
-        }
+    if question.is_correct(&answer) {
+        score.current += question.points;
+        score.correct_answers += 1;
+        info!(
+            "✅ Chat answered correctly! +{} points. Score: {}",
+            question.points, score.current
+        );
+    } else {
+        info!(
+            "❌ Chat answered incorrectly! Correct answer: {:?}",
+            question.correct_answer().map(|o| &o.id)
+        );
     }
+
+    score.total_answered += 1;
+    quiz_state.current_question_index += 1;
+
+    if quiz_state.current_question_index >= quiz_state.total_questions {
+        quiz_state.game_complete = true;
+        info!(
+            "🏁 Quiz complete! Final score: {} / {}",
+            score.current, score.passing_grade
+        );
+    } else {
+        info!(
+            "Moving to question {}",
+            quiz_state.current_question_index + 1
+        );
+    }
+
+    answer_tracker.reset();
 }
 
-/// System that checks if card vote threshold is reached and activates cards
+/// Deploys cards that have passed their vote threshold by appending to
+/// `CardManager::deployed_card_ids`. The deploy system picks them up and runs
+/// their effects through the generic executor.
 pub fn check_card_consensus(
-    mut commands: Commands,
     mut card_tracker: ResMut<ChatCardVoteTracker>,
     mut card_manager: ResMut<crate::resources::CardManager>,
     quiz_state: Res<QuizState>,
@@ -311,80 +296,26 @@ pub fn check_card_consensus(
         return;
     }
 
-    // Check all cards that have votes and collect those ready to activate
-    let cards_to_activate: Vec<crate::resources::CardDefinition> = card_tracker
+    let ready: Vec<(String, String)> = card_tracker
         .votes
         .iter()
         .filter_map(|(card_name, &count)| {
-            // Find the card definition to get its vote requirement
             card_manager
                 .available_cards
                 .iter()
-                .find(|card| card.name.eq_ignore_ascii_case(card_name))
-                .and_then(|card| {
-                    if count >= card.vote_requirement && !card_manager.deployed_card_ids.contains(&card.id) {
-                        Some(card.clone())
-                    } else {
-                        None
-                    }
+                .find(|c| c.name.eq_ignore_ascii_case(card_name))
+                .filter(|c| {
+                    count >= c.vote_requirement
+                        && !card_manager.deployed_card_ids.contains(&c.id)
                 })
+                .map(|c| (c.id.clone(), c.name.clone()))
         })
         .collect();
 
-    // Activate cards that reached threshold
-    for card in cards_to_activate {
-        info!("🎴 Chat activated card: {} (reached {} votes)", card.name, card.vote_requirement);
-
-        // Spawn effect entities for each effect in the card
-        for effect_def in &card.effects {
-            match effect_def.effect_type.as_str() {
-                "eliminate_wrong_answer" => {
-                    if let Some(count) = effect_def.parameters.get("count").and_then(|v| v.as_u64()) {
-                        commands.spawn(crate::components::EliminateWrongAnswers {
-                            count: count as usize,
-                            priority: effect_def.priority,
-                        });
-                        info!("  └─ Spawned eliminate_wrong_answer effect (count: {})", count);
-                    }
-                }
-                "add_time" => {
-                    if let Some(seconds) = effect_def.parameters.get("seconds").and_then(|v| v.as_i64()) {
-                        commands.spawn(crate::components::ModifyTime {
-                            seconds,
-                            priority: effect_def.priority,
-                        });
-                        info!("  └─ Spawned add_time effect (seconds: {})", seconds);
-                    }
-                }
-                "add_points" => {
-                    if let Some(points) = effect_def.parameters.get("points").and_then(|v| v.as_i64()) {
-                        commands.spawn(crate::components::ModifyPoints {
-                            points: points as i32,
-                            priority: effect_def.priority,
-                        });
-                        info!("  └─ Spawned add_points effect (points: {})", points);
-                    }
-                }
-                "multiply_points" => {
-                    if let Some(multiplier) = effect_def.parameters.get("multiplier").and_then(|v| v.as_f64()) {
-                        commands.spawn(crate::components::MultiplyPoints {
-                            multiplier: multiplier as f32,
-                            priority: effect_def.priority,
-                        });
-                        info!("  └─ Spawned multiply_points effect (multiplier: {})", multiplier);
-                    }
-                }
-                _ => {
-                    warn!("  └─ Unknown effect type: {}", effect_def.effect_type);
-                }
-            }
-        }
-
-        // Add to deployed cards
-        card_manager.deployed_card_ids.push(card.id.clone());
-
-        // Remove this card's votes (card is now active)
-        card_tracker.votes.remove(&card.name);
+    for (id, name) in ready {
+        info!("🎴 Chat activated card: {}", name);
+        card_manager.deployed_card_ids.push(id);
+        card_tracker.votes.remove(&name);
     }
 }
 
