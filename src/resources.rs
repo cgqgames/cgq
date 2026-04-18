@@ -4,13 +4,12 @@ use std::time::Duration;
 use crate::components::Permanence;
 use crate::effect::CardEffect;
 
-/// Global quiz state
+/// Quiz progression state. `game_started` / `game_complete` used to live
+/// here; both are now derived from `SessionMode` / `QuizMode` directly.
 #[derive(Resource, Default)]
 pub struct QuizState {
     pub current_question_index: usize,
     pub total_questions: usize,
-    pub game_started: bool,
-    pub game_complete: bool,
     pub paused: bool,
 }
 

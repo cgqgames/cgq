@@ -14,7 +14,9 @@ mod deploy;
 mod effect;
 mod effect_executor;
 mod game_state;
+mod modes;
 mod resources;
+mod session;
 mod systems;
 mod ui;
 mod ui_config;
@@ -25,13 +27,15 @@ mod chat_plugin;
 #[cfg(not(target_arch = "wasm32"))]
 mod twitch;
 
-use collections::CollectionManager;
+use card_3d::Card3dPlugin;
 use components::*;
 use content_config::{load_app_config, AppConfig};
-use effect_executor::EffectExecutor;
-use game_state::GameState;
+use deploy::CardPlugin;
+use modes::ModesPlugin;
 use resources::*;
-use systems::*;
+use session::StandaloneSessionPlugin;
+use systems::QuizPlugin;
+use ui::UiPlugin;
 
 #[derive(Parser, Debug, Resource, Clone)]
 #[command(name = "cgq")]
@@ -41,15 +45,12 @@ pub struct Args {
     #[arg(short = 'C', long, default_value = "examples/sample-quiz/etc")]
     pub config_dir: PathBuf,
 
-    /// Twitch channel to connect to for chat integration (optional)
     #[arg(short = 't', long)]
     twitch_channel: Option<String>,
 
-    /// Minimum votes required for chat consensus
     #[arg(long, default_value = "3")]
     chat_threshold: usize,
 
-    /// Enable green screen background for streaming/recording
     #[arg(short, long)]
     pub live: bool,
 }
@@ -85,7 +86,10 @@ fn main() {
         ..default()
     };
     let score = Score {
-        passing_grade: app_config.game.passing_grade.unwrap_or(Score::default().passing_grade),
+        passing_grade: app_config
+            .game
+            .passing_grade
+            .unwrap_or(Score::default().passing_grade),
         ..default()
     };
     let timer_duration = Duration::from_secs(
@@ -117,28 +121,22 @@ fn main() {
         .insert_resource(args)
         .insert_resource(app_config.ui.clone())
         .insert_resource(AppConfigResource(app_config))
-        .insert_resource(quiz_state)
+        .add_plugins((
+            ModesPlugin,
+            StandaloneSessionPlugin,
+            QuizPlugin,
+            CardPlugin,
+            Card3dPlugin,
+            UiPlugin,
+        ))
+        .add_systems(Startup, (setup, load_content));
+
+    // Seed the timer / score resources that QuizPlugin also init_resources —
+    // these specific instances come from the quiz config. Insert them after
+    // the plugin so we override the defaults.
+    app.insert_resource(quiz_state)
         .insert_resource(game_timer)
-        .insert_resource(score)
-        .init_resource::<CardManager>()
-        .init_resource::<GameState>()
-        .init_resource::<CollectionManager>()
-        .init_resource::<EffectExecutor>()
-        .init_resource::<deploy::DeployedEffectsApplied>()
-        .init_resource::<card_3d::SpawnedCards>()
-        .add_event::<deploy::AnswerSubmittedEvent>()
-        .add_systems(Startup, (setup, load_content, card_3d::setup_3d_cards))
-        .add_systems(Update, (
-            quiz_system,
-            timer_system,
-            input_system,
-            deploy::apply_deployed_card_effects,
-            deploy::forward_answer_events,
-            deploy::expire_cards_on_question_change,
-            ui::ui_system,
-            card_3d::spawn_cards_system,
-            card_3d::update_card_positions,
-        ));
+        .insert_resource(score);
 
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(channel) = twitch_channel {

@@ -221,7 +221,7 @@ impl Plugin for ChatPlugin {
                 check_answer_consensus,
                 check_card_consensus,
                 reset_votes_on_question_change,
-            ));
+            ).run_if(in_state(crate::modes::QuizMode::Active)));
     }
 }
 
@@ -236,7 +236,7 @@ pub fn check_answer_consensus(
     mut answer_events: EventWriter<crate::deploy::AnswerSubmittedEvent>,
     questions: Query<&Question, With<ActiveQuestion>>,
 ) {
-    if !quiz_state.game_started || quiz_state.paused || quiz_state.game_complete {
+    if quiz_state.paused {
         return;
     }
 
@@ -275,13 +275,7 @@ pub fn check_answer_consensus(
     score.total_answered += 1;
     quiz_state.current_question_index += 1;
 
-    if quiz_state.current_question_index >= quiz_state.total_questions {
-        quiz_state.game_complete = true;
-        info!(
-            "🏁 Quiz complete! Final score: {} / {}",
-            score.current, score.passing_grade
-        );
-    } else {
+    if quiz_state.current_question_index < quiz_state.total_questions {
         info!(
             "Moving to question {}",
             quiz_state.current_question_index + 1
@@ -299,7 +293,7 @@ pub fn check_card_consensus(
     mut card_manager: ResMut<crate::resources::CardManager>,
     quiz_state: Res<QuizState>,
 ) {
-    if !quiz_state.game_started || quiz_state.paused || quiz_state.game_complete {
+    if quiz_state.paused {
         return;
     }
 
@@ -364,7 +358,7 @@ pub fn reset_votes_on_question_change(
     mut card_tracker: ResMut<ChatCardVoteTracker>,
 ) {
     // Reset when question index changes
-    if quiz_state.is_changed() && quiz_state.game_started {
+    if quiz_state.is_changed() {
         info!("Question changed, resetting chat votes");
         answer_tracker.reset();
         card_tracker.reset();

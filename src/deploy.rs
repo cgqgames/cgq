@@ -11,7 +11,30 @@ use crate::components::{ActiveQuestion, Permanence, Question, QuestionOption};
 use crate::effect::{EffectContext, Value};
 use crate::effect_executor::EffectExecutor;
 use crate::game_state::GameState;
+use crate::modes::CardMode;
 use crate::resources::{CardDefinition, CardManager, QuizState};
+
+pub struct CardPlugin;
+
+impl Plugin for CardPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<CardManager>()
+            .init_resource::<CollectionManager>()
+            .init_resource::<EffectExecutor>()
+            .init_resource::<GameState>()
+            .init_resource::<DeployedEffectsApplied>()
+            .add_event::<AnswerSubmittedEvent>()
+            .add_systems(
+                Update,
+                (
+                    apply_deployed_card_effects,
+                    forward_answer_events,
+                    expire_cards_on_question_change,
+                )
+                    .run_if(in_state(CardMode::Active)),
+            );
+    }
+}
 
 #[derive(Resource, Default)]
 pub struct DeployedEffectsApplied {
@@ -233,7 +256,7 @@ fn register_turn_counter(world: &mut World, card: &CardDefinition) {
 pub fn expire_cards_on_question_change(world: &mut World) {
     let changed = world
         .get_resource_ref::<QuizState>()
-        .is_some_and(|qs| qs.is_changed() && qs.game_started);
+        .is_some_and(|qs| qs.is_changed());
     if !changed {
         return;
     }
