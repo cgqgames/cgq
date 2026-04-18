@@ -71,12 +71,16 @@ impl GameState {
 
             // Card paths
             ["cards", "slots", "max"] => {
-                // TODO: Add max_slots field to CardManager
-                Some(Value::Int(10)) // Default max slots
+                world.get_resource::<CardManager>().map(|cm| Value::Int(cm.max_slots))
             }
             ["cards", "slots", "occupied"] => {
                 world.get_resource::<CardManager>()
                     .map(|cm| Value::Int(cm.deployed_card_ids.len() as i32))
+            }
+            ["cards", "vote_req", card_type] => {
+                world.get_resource::<CardManager>().map(|cm| {
+                    Value::Int(cm.vote_req_modifiers.get(*card_type).copied().unwrap_or(0))
+                })
             }
 
             // Variables (temporary storage)
@@ -145,6 +149,27 @@ impl GameState {
                 if let Some(amount) = value.as_int() {
                     if let Some(mut score) = world.get_resource_mut::<Score>() {
                         score.passing_grade = amount;
+                        return true;
+                    }
+                }
+                false
+            }
+
+            // Card paths
+            ["cards", "slots", "max"] => {
+                if let Some(amount) = value.as_int() {
+                    if let Some(mut cm) = world.get_resource_mut::<CardManager>() {
+                        cm.max_slots = amount;
+                        return true;
+                    }
+                }
+                false
+            }
+            ["cards", "vote_req", card_type] => {
+                if let Some(amount) = value.as_int() {
+                    if let Some(mut cm) = world.get_resource_mut::<CardManager>() {
+                        cm.vote_req_modifiers
+                            .insert((*card_type).to_string(), amount);
                         return true;
                     }
                 }

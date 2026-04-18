@@ -1,0 +1,32 @@
+[ui.layout]
+preset = "stream-overlay"
+
+[ui.question_box]
+left = 20.0
+top = 20.0
+width = 650.0
+font_size = 20.0
+header_font_size = 24.0
+option_font_size = 18.0
+background_alpha = 0.95
+
+[ui.timer_box]
+left = 20.0
+bottom = 20.0
+timer_font_size = 60.0
+status_font_size = 16.0
+background_alpha = 0.95
+
+[ui.cards_grid]
+right = 20.0
+bottom = 20.0
+width = 500.0
+height = 400.0
+background_alpha = 0.8
+
+[ui.colors]
+background = [0.08, 0.05, 0.12]
+accent = [0.3, 0.9, 0.8]
+timer = [0.2, 0.9, 0.9]
+text_primary = [1.0, 1.0, 1.0]
+text_secondary = [0.9, 0.9, 0.95]

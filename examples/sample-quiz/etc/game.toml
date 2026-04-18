@@ -1,0 +1,4 @@
+[game]
+title = "CGQ Sample Quiz"
+passing_grade = 6
+timer_seconds = 600

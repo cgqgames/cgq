@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use std::time::Duration;
 
-use crate::cards::Permanence;
+use crate::components::Permanence;
 use crate::effect::CardEffect;
 
 /// Global quiz state
@@ -51,10 +51,33 @@ impl Default for Score {
 }
 
 /// Manages all cards in the game
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct CardManager {
     pub available_cards: Vec<CardDefinition>,
     pub deployed_card_ids: Vec<String>,
+    /// Maximum number of concurrently-deployed permanent cards. Modified by
+    /// effects that add/remove table slots.
+    pub max_slots: i32,
+    /// Per-card-type vote-requirement modifier. Added to a card's base
+    /// `vote_requirement` when the chat-consensus system evaluates it. A
+    /// "*" key applies to every card type.
+    pub vote_req_modifiers: std::collections::HashMap<String, i32>,
+    /// Turns remaining for deployed non-permanent cards. A card with an
+    /// entry here is decremented on each question change and expired when
+    /// the counter reaches zero. Permanent cards have no entry.
+    pub turn_counters: std::collections::HashMap<String, u32>,
+}
+
+impl Default for CardManager {
+    fn default() -> Self {
+        Self {
+            available_cards: Vec::new(),
+            deployed_card_ids: Vec::new(),
+            max_slots: 4,
+            vote_req_modifiers: std::collections::HashMap::new(),
+            turn_counters: std::collections::HashMap::new(),
+        }
+    }
 }
 
 /// Card definition loaded from YAML.

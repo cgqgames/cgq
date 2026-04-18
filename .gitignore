@@ -9,8 +9,7 @@ wasm/*
 *.swp
 
 # Game content & working files
-content/
-share/
+etc/
 
 # Non-git hidden files
 .*

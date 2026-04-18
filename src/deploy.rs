@@ -7,16 +7,24 @@
 use bevy::prelude::*;
 
 use crate::collections::{Collection, CollectionManager};
-use crate::components::{ActiveQuestion, Question, QuestionOption};
+use crate::components::{ActiveQuestion, Permanence, Question, QuestionOption};
 use crate::effect::{EffectContext, Value};
 use crate::effect_executor::EffectExecutor;
 use crate::game_state::GameState;
-use crate::cards::Permanence;
 use crate::resources::{CardDefinition, CardManager, QuizState};
 
 #[derive(Resource, Default)]
 pub struct DeployedEffectsApplied {
     card_ids: Vec<String>,
+}
+
+/// Emitted when an answer resolves, whether from keyboard input or chat
+/// consensus. Card effects registered via `on_correct_answer` /
+/// `on_wrong_answer` consume this.
+#[derive(Event, Debug, Clone)]
+pub struct AnswerSubmittedEvent {
+    pub correct: bool,
+    pub question_id: String,
 }
 
 /// Drives card-effect execution. Runs as an exclusive system so the executor
@@ -49,6 +57,7 @@ pub fn apply_deployed_card_effects(world: &mut World) {
                 );
             }
         }
+        register_turn_counter(world, &card);
         if let Some(mut applied) = world.get_resource_mut::<DeployedEffectsApplied>() {
             applied.card_ids.push(card.id);
         }
@@ -66,22 +75,68 @@ fn collect_pending(world: &mut World) -> Vec<CardDefinition> {
         .map(|a| a.card_ids.clone())
         .unwrap_or_default();
 
+    let banned_ids = banned_strings(world, "cards.banned_ids");
+    let banned_types = banned_strings(world, "cards.banned_types");
+
     let Some(card_manager) = world.get_resource::<CardManager>() else {
         return Vec::new();
     };
 
-    card_manager
-        .deployed_card_ids
-        .iter()
-        .filter(|id| !applied_ids.contains(id))
-        .filter_map(|id| {
-            card_manager
-                .available_cards
-                .iter()
-                .find(|c| &c.id == id)
-                .cloned()
+    let mut pending = Vec::new();
+    let mut blocked_ids = Vec::new();
+    for id in card_manager.deployed_card_ids.iter() {
+        if applied_ids.contains(id) {
+            continue;
+        }
+        let Some(card) = card_manager.available_cards.iter().find(|c| &c.id == id) else {
+            continue;
+        };
+        let type_str = card_type_key(&card.card_type);
+        if banned_ids.contains(&card.id) || banned_types.contains(&type_str) {
+            info!("Card '{}' blocked by active ban", card.id);
+            blocked_ids.push(card.id.clone());
+            continue;
+        }
+        pending.push(card.clone());
+    }
+
+    if !blocked_ids.is_empty() {
+        if let Some(mut cm) = world.get_resource_mut::<CardManager>() {
+            cm.deployed_card_ids.retain(|id| !blocked_ids.contains(id));
+        }
+    }
+
+    pending
+}
+
+fn banned_strings(world: &World, path: &str) -> Vec<String> {
+    world
+        .get_resource::<CollectionManager>()
+        .and_then(|c| c.get(path))
+        .map(|c| {
+            c.iter()
+                .filter_map(|v| match v {
+                    Value::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect()
         })
-        .collect()
+        .unwrap_or_default()
+}
+
+fn card_type_key(card_type: &crate::components::CardType) -> String {
+    use crate::components::CardType::*;
+    match card_type {
+        Resistance => "resistance",
+        Palestinian => "palestinian",
+        Politics => "politics",
+        Negative => "negative",
+        IDF => "idf",
+        Hasbara => "hasbara",
+        Ceasefire => "ceasefire",
+        Other => "other",
+    }
+    .to_string()
 }
 
 /// Projects the active question's options into the `CollectionManager` at
@@ -124,8 +179,58 @@ fn sync_question_options_out_of_collection(world: &mut World) {
     }
 }
 
-/// Remove one-shot cards when the question changes.
-pub fn expire_one_shot_cards(world: &mut World) {
+/// Forwards `AnswerSubmittedEvent` into the effect executor's registered
+/// event listeners. Any `OnEvent { event: "answer_correct" | "answer_wrong" }`
+/// listeners that were registered by deployed cards run here.
+pub fn forward_answer_events(world: &mut World) {
+    let events: Vec<AnswerSubmittedEvent> = {
+        let Some(mut e) = world.get_resource_mut::<Events<AnswerSubmittedEvent>>() else {
+            return;
+        };
+        e.drain().collect()
+    };
+    if events.is_empty() {
+        return;
+    }
+
+    sync_question_options_into_collection(world);
+
+    let mut executor = world.remove_resource::<EffectExecutor>().unwrap_or_default();
+    let mut state = world.remove_resource::<GameState>().unwrap_or_default();
+
+    for event in events {
+        let event_name = if event.correct { "answer_correct" } else { "answer_wrong" };
+        let Some(listeners) = executor.get_event_listeners(event_name) else { continue };
+        for ops in listeners {
+            let mut context = EffectContext::new(String::new(), event_name.to_string());
+            for op in &ops {
+                if let Err(e) = executor.execute_operation(op, &mut context, &mut state, world) {
+                    warn!("Answer-event handler '{}' failed: {}", event_name, e);
+                }
+            }
+        }
+    }
+
+    world.insert_resource(executor);
+    world.insert_resource(state);
+
+    sync_question_options_out_of_collection(world);
+}
+
+fn register_turn_counter(world: &mut World, card: &CardDefinition) {
+    let turns = match card.permanence {
+        Permanence::Permanent => return,
+        Permanence::OneShot => 1,
+        Permanence::Turns { count } => count,
+    };
+    if let Some(mut cm) = world.get_resource_mut::<CardManager>() {
+        cm.turn_counters.insert(card.id.clone(), turns);
+    }
+}
+
+/// Decrement turn counters on question change; expire cards whose counter
+/// reaches zero. Permanent cards have no counter and are never touched here.
+pub fn expire_cards_on_question_change(world: &mut World) {
     let changed = world
         .get_resource_ref::<QuizState>()
         .is_some_and(|qs| qs.is_changed() && qs.game_started);
@@ -133,38 +238,29 @@ pub fn expire_one_shot_cards(world: &mut World) {
         return;
     }
 
-    let Some(card_manager) = world.get_resource::<CardManager>() else {
+    let Some(mut cm) = world.get_resource_mut::<CardManager>() else {
         return;
     };
 
-    let expired: Vec<String> = card_manager
-        .deployed_card_ids
-        .iter()
-        .filter(|id| {
-            card_manager
-                .available_cards
-                .iter()
-                .find(|c| &c.id == *id)
-                .is_some_and(|c| c.permanence == Permanence::OneShot)
-        })
-        .cloned()
-        .collect();
-
-    if expired.is_empty() {
-        return;
+    let mut expired: Vec<String> = Vec::new();
+    for (id, count) in cm.turn_counters.iter_mut() {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            expired.push(id.clone());
+        }
     }
-
-    let mut card_manager = world.get_resource_mut::<CardManager>().unwrap();
-    card_manager
-        .deployed_card_ids
-        .retain(|id| !expired.contains(id));
+    for id in &expired {
+        cm.turn_counters.remove(id);
+    }
+    cm.deployed_card_ids.retain(|id| !expired.contains(id));
+    drop(cm);
 
     if let Some(mut applied) = world.get_resource_mut::<DeployedEffectsApplied>() {
         applied.card_ids.retain(|id| !expired.contains(id));
     }
 
     for id in &expired {
-        info!("Expired one-shot card: {}", id);
+        info!("Expired card: {}", id);
     }
 }
 

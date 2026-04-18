@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Resource)]
 pub struct UiConfig {
@@ -95,18 +94,6 @@ impl Default for UiConfig {
 }
 
 impl UiConfig {
-    pub fn from_file(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        let config: UiConfig = toml::from_str(&content)?;
-        Ok(config)
-    }
-
-    pub fn save_to_file(&self, path: impl AsRef<Path>) -> anyhow::Result<()> {
-        let content = toml::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
-        Ok(())
-    }
-
     pub fn background_color(&self) -> Color {
         Color::srgb(
             self.colors.background[0],

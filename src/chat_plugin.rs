@@ -233,6 +233,7 @@ pub fn check_answer_consensus(
     mut answer_tracker: ResMut<ChatAnswerTracker>,
     mut quiz_state: ResMut<QuizState>,
     mut score: ResMut<Score>,
+    mut answer_events: EventWriter<crate::deploy::AnswerSubmittedEvent>,
     questions: Query<&Question, With<ActiveQuestion>>,
 ) {
     if !quiz_state.game_started || quiz_state.paused || quiz_state.game_complete {
@@ -251,7 +252,8 @@ pub fn check_answer_consensus(
 
     let Ok(question) = questions.get_single() else { return };
 
-    if question.is_correct(&answer) {
+    let correct = question.is_correct(&answer);
+    if correct {
         score.current += question.points;
         score.correct_answers += 1;
         info!(
@@ -264,6 +266,11 @@ pub fn check_answer_consensus(
             question.correct_answer().map(|o| &o.id)
         );
     }
+
+    answer_events.send(crate::deploy::AnswerSubmittedEvent {
+        correct,
+        question_id: question.id.clone(),
+    });
 
     score.total_answered += 1;
     quiz_state.current_question_index += 1;
@@ -305,8 +312,8 @@ pub fn check_card_consensus(
                 .iter()
                 .find(|c| c.name.eq_ignore_ascii_case(card_name))
                 .filter(|c| {
-                    count >= c.vote_requirement
-                        && !card_manager.deployed_card_ids.contains(&c.id)
+                    let effective = effective_vote_requirement(c, &card_manager);
+                    count >= effective && !card_manager.deployed_card_ids.contains(&c.id)
                 })
                 .map(|c| (c.id.clone(), c.name.clone()))
         })
@@ -317,6 +324,37 @@ pub fn check_card_consensus(
         card_manager.deployed_card_ids.push(id);
         card_tracker.votes.remove(&name);
     }
+}
+
+/// Compute a card's effective vote requirement, folding in the per-type
+/// modifier (and the wildcard "*" modifier) accumulated from card effects.
+fn effective_vote_requirement(
+    card: &crate::resources::CardDefinition,
+    cm: &crate::resources::CardManager,
+) -> usize {
+    let type_key = card_type_key(&card.card_type);
+    let modifier = cm
+        .vote_req_modifiers
+        .get(&type_key)
+        .copied()
+        .unwrap_or(0)
+        + cm.vote_req_modifiers.get("*").copied().unwrap_or(0);
+    (card.vote_requirement as i32 + modifier).max(1) as usize
+}
+
+fn card_type_key(card_type: &crate::components::CardType) -> String {
+    use crate::components::CardType::*;
+    match card_type {
+        Resistance => "resistance",
+        Palestinian => "palestinian",
+        Politics => "politics",
+        Negative => "negative",
+        IDF => "idf",
+        Hasbara => "hasbara",
+        Ceasefire => "ceasefire",
+        Other => "other",
+    }
+    .to_string()
 }
 
 /// System that resets vote trackers when the question changes

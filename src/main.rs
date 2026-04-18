@@ -1,57 +1,51 @@
 use bevy::prelude::*;
 use clap::Parser;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::time::Duration;
 
+mod card_3d;
+mod card_templates;
+mod cards;
+mod collections;
 mod components;
+mod constants;
+mod content_config;
+mod deploy;
+mod effect;
+mod effect_executor;
+mod game_state;
 mod resources;
 mod systems;
-mod cards;
-mod effect;
-mod game_state;
-mod effect_executor;
-mod collections;
+mod ui;
 mod ui_config;
 #[cfg(not(target_arch = "wasm32"))]
 mod chat;
 #[cfg(not(target_arch = "wasm32"))]
-mod twitch;
-#[cfg(not(target_arch = "wasm32"))]
 mod chat_plugin;
-mod card_3d;
-mod card_templates;
-mod constants;
-mod deploy;
-mod ui;
+#[cfg(not(target_arch = "wasm32"))]
+mod twitch;
 
 use collections::CollectionManager;
 use components::*;
+use content_config::{load_app_config, AppConfig};
 use effect_executor::EffectExecutor;
 use game_state::GameState;
 use resources::*;
 use systems::*;
-use ui_config::UiConfig;
 
 #[derive(Parser, Debug, Resource, Clone)]
 #[command(name = "cgq")]
 #[command(about = "Card Game Quiz Framework - A Bevy-based quiz game engine", long_about = None)]
 pub struct Args {
-    /// Path to the quiz YAML file
-    #[arg(short, long, default_value = "examples/sample-quiz/questions.yml")]
-    quiz: PathBuf,
-
-    /// Directory of card TOML files (defaults to <quiz-dir>/cards/)
-    #[arg(short, long)]
-    cards: Option<PathBuf>,
-
-    /// Path to UI config TOML file (optional, uses built-in defaults if not provided)
-    #[arg(short = 'u', long)]
-    ui_config: Option<PathBuf>,
+    /// Directory containing the merged configuration tree
+    #[arg(short = 'C', long, default_value = "examples/sample-quiz/etc")]
+    pub config_dir: PathBuf,
 
     /// Twitch channel to connect to for chat integration (optional)
     #[arg(short = 't', long)]
     twitch_channel: Option<String>,
 
-    /// Minimum votes required for chat consensus (default: 3)
+    /// Minimum votes required for chat consensus
     #[arg(long, default_value = "3")]
     chat_threshold: usize,
 
@@ -61,21 +55,48 @@ pub struct Args {
 }
 
 fn main() {
-    // Initialize WASM panic hook for better error messages
     #[cfg(target_arch = "wasm32")]
     console_error_panic_hook::set_once();
 
     let args = Args::parse();
+    let app_config = load_app_config(&args.config_dir).unwrap_or_else(|e| {
+        panic!(
+            "Failed to load configuration from {}: {:#}",
+            args.config_dir.display(),
+            e
+        )
+    });
 
-    // Load UI config (use defaults if not provided)
-    let ui_config = load_ui_config(&args);
+    let window_title = app_config
+        .game
+        .title
+        .clone()
+        .unwrap_or_else(|| "CGQ - Card Game Quiz".to_string());
 
-    // Use green screen background if --live flag is set
     let background_color = if args.live {
         let (r, g, b) = constants::CHROMA_KEY_GREEN;
         Color::srgb(r, g, b)
     } else {
-        ui_config.background_color()
+        app_config.ui.background_color()
+    };
+
+    let quiz_state = QuizState {
+        total_questions: app_config.questions.len(),
+        ..default()
+    };
+    let score = Score {
+        passing_grade: app_config.game.passing_grade.unwrap_or(Score::default().passing_grade),
+        ..default()
+    };
+    let timer_duration = Duration::from_secs(
+        app_config
+            .game
+            .timer_seconds
+            .unwrap_or(GameTimer::default().timer.duration().as_secs()),
+    );
+    let game_timer = GameTimer {
+        timer: Timer::new(timer_duration, TimerMode::Once),
+        paused: false,
     };
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -84,45 +105,47 @@ fn main() {
     let chat_threshold = args.chat_threshold;
 
     let mut app = App::new();
-
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "CGQ - Card Game Quiz".to_string(),
-                resolution: (1920.0, 1080.0).into(),
-                ..default()
-            }),
+        primary_window: Some(Window {
+            title: window_title,
+            resolution: (1920.0, 1080.0).into(),
             ..default()
-        }))
+        }),
+        ..default()
+    }))
         .insert_resource(ClearColor(background_color))
-        // Resources
         .insert_resource(args)
-        .insert_resource(ui_config)
-        .init_resource::<QuizState>()
-        .init_resource::<GameTimer>()
-        .init_resource::<Score>()
+        .insert_resource(app_config.ui.clone())
+        .insert_resource(AppConfigResource(app_config))
+        .insert_resource(quiz_state)
+        .insert_resource(game_timer)
+        .insert_resource(score)
         .init_resource::<CardManager>()
         .init_resource::<GameState>()
         .init_resource::<CollectionManager>()
         .init_resource::<EffectExecutor>()
         .init_resource::<deploy::DeployedEffectsApplied>()
         .init_resource::<card_3d::SpawnedCards>()
-        // Systems
-        .add_systems(Startup, (setup, load_quiz, load_cards, card_3d::setup_3d_cards))
+        .add_event::<deploy::AnswerSubmittedEvent>()
+        .add_systems(Startup, (setup, load_content, card_3d::setup_3d_cards))
         .add_systems(Update, (
             quiz_system,
             timer_system,
             input_system,
             deploy::apply_deployed_card_effects,
-            deploy::expire_one_shot_cards,
+            deploy::forward_answer_events,
+            deploy::expire_cards_on_question_change,
             ui::ui_system,
             card_3d::spawn_cards_system,
             card_3d::update_card_positions,
         ));
 
-    // Conditionally add chat integration (native only)
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(channel) = twitch_channel {
-        info!("Enabling Twitch chat integration for channel: {} (threshold: {} votes)", channel, chat_threshold);
+        info!(
+            "Enabling Twitch chat integration for channel: {} (threshold: {} votes)",
+            channel, chat_threshold
+        );
         app.add_plugins(chat_plugin::ChatPlugin {
             channel,
             answer_threshold: chat_threshold,
@@ -133,65 +156,24 @@ fn main() {
     app.run();
 }
 
-fn load_ui_config(args: &Args) -> UiConfig {
-    if let Some(ref config_path) = args.ui_config {
-        match UiConfig::from_file(config_path) {
-            Ok(config) => {
-                info!("Loaded UI config from {:?}", config_path);
-                config
-            }
-            Err(e) => {
-                warn!("Failed to load UI config from {:?}: {}. Using built-in defaults.", config_path, e);
-                UiConfig::default()
-            }
-        }
-    } else {
-        info!("No UI config provided, using built-in defaults");
-        UiConfig::default()
-    }
-}
+#[derive(Resource)]
+struct AppConfigResource(AppConfig);
 
-fn load_quiz(
+fn load_content(
     mut commands: Commands,
-    mut quiz_state: ResMut<QuizState>,
-    args: Res<Args>,
+    mut card_manager: ResMut<CardManager>,
+    config: Res<AppConfigResource>,
 ) {
-    let yaml_content = std::fs::read_to_string(&args.quiz)
-        .unwrap_or_else(|e| panic!("Failed to load questions from {:?}: {}", args.quiz, e));
+    let config = &config.0;
+    card_manager.available_cards = cards::cards_from_configs(config.cards.clone());
 
-    let question_set: cards::QuestionSet = serde_yaml::from_str(&yaml_content)
-        .unwrap_or_else(|e| panic!("Failed to parse questions YAML: {}", e));
-
-    quiz_state.total_questions = question_set.questions.len();
-
-    info!("Loaded {} questions from {:?}", question_set.questions.len(), args.quiz);
-
-    for (index, mut question) in question_set.questions.into_iter().enumerate() {
-        question.question_index = index;
+    for (index, question) in cards::questions_from_configs(config.questions.clone())
+        .into_iter()
+        .enumerate()
+    {
         let mut entity = commands.spawn(question);
-
         if index == 0 {
             entity.insert(ActiveQuestion);
-        }
-    }
-}
-
-fn load_cards(mut card_manager: ResMut<CardManager>, args: Res<Args>) {
-    let cards_dir = args
-        .cards
-        .clone()
-        .unwrap_or_else(|| args.quiz.parent().unwrap_or(Path::new(".")).join("cards"));
-
-    match cards::load_cards_from_dir(&cards_dir) {
-        Ok(cards) => {
-            card_manager.available_cards = cards;
-        }
-        Err(e) => {
-            warn!(
-                "Failed to load cards from {}: {}. Game will continue without cards.",
-                cards_dir.display(),
-                e
-            );
         }
     }
 }

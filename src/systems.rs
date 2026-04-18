@@ -48,6 +48,7 @@ pub fn input_system(
     mut quiz_state: ResMut<QuizState>,
     mut score: ResMut<Score>,
     mut card_manager: ResMut<CardManager>,
+    mut answer_events: EventWriter<crate::deploy::AnswerSubmittedEvent>,
     questions: Query<&Question, With<ActiveQuestion>>,
 ) {
     if keyboard.just_pressed(KeyCode::Space) {
@@ -99,7 +100,8 @@ pub fn input_system(
     let Some(answer) = answer_key else { return };
     let Ok(question) = questions.get_single() else { return };
 
-    if question.is_correct(answer) {
+    let correct = question.is_correct(answer);
+    if correct {
         score.current += question.points;
         score.correct_answers += 1;
         info!("✅ Correct! +{} points. Score: {}", question.points, score.current);
@@ -109,6 +111,11 @@ pub fn input_system(
             question.correct_answer().map(|o| &o.id)
         );
     }
+
+    answer_events.send(crate::deploy::AnswerSubmittedEvent {
+        correct,
+        question_id: question.id.clone(),
+    });
 
     score.total_answered += 1;
     quiz_state.current_question_index += 1;

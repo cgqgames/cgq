@@ -1,0 +1,38 @@
+[questions.q_france]
+text = "What is the capital of France?"
+points = 2
+explanation = "Paris has been the capital of France since 987 AD."
+source = "General Knowledge"
+tags = ["geography", "europe"]
+options = [
+  { id = "a", text = "London", correct = false },
+  { id = "b", text = "Paris", correct = true },
+  { id = "c", text = "Berlin", correct = false },
+  { id = "d", text = "Madrid", correct = false },
+]
+
+[questions.q_mars]
+text = "Which planet is known as the Red Planet?"
+points = 2
+explanation = "Mars appears red due to iron oxide on its surface."
+source = "Astronomy 101"
+tags = ["science", "astronomy"]
+options = [
+  { id = "a", text = "Venus", correct = false },
+  { id = "b", text = "Mars", correct = true },
+  { id = "c", text = "Jupiter", correct = false },
+  { id = "d", text = "Saturn", correct = false },
+]
+
+[questions.q_ww2]
+text = "In which year did World War II end?"
+points = 2
+explanation = "World War II ended in 1945 with VE Day (May 8) and VJ Day (August 15)."
+source = "History"
+tags = ["history", "world-war"]
+options = [
+  { id = "a", text = "1943", correct = false },
+  { id = "b", text = "1944", correct = false },
+  { id = "c", text = "1945", correct = true },
+  { id = "d", text = "1946", correct = false },
+]

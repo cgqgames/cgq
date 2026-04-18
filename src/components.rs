@@ -38,6 +38,20 @@ impl Question {
 #[derive(Component)]
 pub struct ActiveQuestion;
 
+/// How long a deployed card stays on the board.
+///
+/// - `Permanent`: stays until explicitly removed (e.g. countered by another card).
+/// - `OneShot`: removed on the next question change.
+/// - `Turns { count }`: removed after N question changes. `count = 1` is
+///   equivalent to `OneShot`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Permanence {
+    Permanent,
+    OneShot,
+    Turns { count: u32 },
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum CardType {

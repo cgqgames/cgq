@@ -1,4 +1,4 @@
-//! Expansion of human-friendly YAML card-effect shorthand into primitive
+//! Expansion of human-friendly YAML/TOML card-effect shorthand into primitive
 //! `EffectOperation` trees consumed by the executor.
 
 use bevy::log::warn;
@@ -52,54 +52,158 @@ pub fn expand(yaml: YamlCardEffect) -> CardEffect {
 
 fn expand_operations(shorthand: &str, params: &serde_json::Value) -> Vec<EffectOperation> {
     match shorthand {
-        "eliminate_wrong_answer" => {
-            let count = params
-                .get("count")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(1) as usize;
-            vec![EffectOperation::Remove {
-                target: "question.options".to_string(),
-                count,
-                filter: Some(Predicate::Equals {
-                    field: "correct".to_string(),
-                    value: Value::Bool(false),
-                }),
-                random: Some(true),
-            }]
+        // --- Value modifications ---
+        "add_time" => vec![add_op("timer.remaining", param_i32(params, "seconds"))],
+        "subtract_time" => vec![subtract_op("timer.remaining", param_i32(params, "seconds"))],
+        "add_points" => vec![add_op("question.points", param_i32(params, "points"))],
+        "subtract_points" => vec![subtract_op("question.points", param_i32(params, "points"))],
+        "modify_passing_grade" => vec![add_op("score.passing_grade", param_i32(params, "amount"))],
+        "modify_max_slots" => vec![add_op("cards.slots.max", param_i32(params, "amount"))],
+        "multiply_points" => vec![EffectOperation::Multiply {
+            target: "question.points".to_string(),
+            factor: param_f32(params, "multiplier", 1.0),
+        }],
+
+        // --- Collection operations ---
+        "eliminate_wrong_answer" => vec![EffectOperation::Remove {
+            target: "question.options".to_string(),
+            count: param_usize(params, "count", 1),
+            filter: Some(Predicate::Equals {
+                field: "correct".to_string(),
+                value: Value::Bool(false),
+            }),
+            random: Some(true),
+        }],
+
+        // --- Card bans ---
+        "ban_card_types" => ban_ops("cards.banned_types", params, "types"),
+        "ban_cards" => ban_ops("cards.banned_ids", params, "ids"),
+
+        // --- Vote-requirement modifiers (per-type) ---
+        "modify_vote_requirement" => {
+            let amount = param_i32(params, "amount");
+            let card_type = params
+                .get("card_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("*")
+                .to_string();
+            vec![add_op(&format!("cards.vote_req.{}", card_type), amount)]
         }
-        "add_time" => {
-            let seconds = params
-                .get("seconds")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-            vec![EffectOperation::Add {
-                target: "timer.remaining".to_string(),
-                amount: seconds,
-            }]
-        }
-        "add_points" => {
-            let points = params
-                .get("points")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-            vec![EffectOperation::Add {
-                target: "question.points".to_string(),
-                amount: points,
-            }]
-        }
-        "multiply_points" => {
-            let multiplier = params
-                .get("multiplier")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(1.0) as f32;
-            vec![EffectOperation::Multiply {
-                target: "question.points".to_string(),
-                factor: multiplier,
-            }]
-        }
+
+        // --- Conditionals ---
+        "if_timer_above" => expand_conditional(params, true),
+        "if_timer_below" => expand_conditional(params, false),
+
+        // --- Answer event hooks ---
+        // `on_correct_answer { do = [...] }` registers a listener that runs
+        // the nested `do` effects whenever an answer resolves as correct.
+        "on_correct_answer" => vec![EffectOperation::OnEvent {
+            event: "answer_correct".to_string(),
+            operations: expand_nested(params, "do"),
+        }],
+        "on_wrong_answer" => vec![EffectOperation::OnEvent {
+            event: "answer_wrong".to_string(),
+            operations: expand_nested(params, "do"),
+        }],
+
         _ => {
             warn!("Unknown card effect shorthand: {}", shorthand);
             Vec::new()
         }
     }
+}
+
+fn expand_conditional(params: &serde_json::Value, above: bool) -> Vec<EffectOperation> {
+    let percent = param_f32(params, "percent", 50.0);
+    let then_ops = expand_nested(params, "then");
+    let else_ops = expand_nested(params, "else");
+
+    let field = "timer.percent_remaining".to_string();
+    let threshold = Value::Float(percent);
+    let condition = if above {
+        Predicate::GreaterThan { field, value: threshold }
+    } else {
+        Predicate::LessThan { field, value: threshold }
+    };
+
+    vec![EffectOperation::IfCondition {
+        condition,
+        then: then_ops,
+        else_: if else_ops.is_empty() { None } else { Some(else_ops) },
+    }]
+}
+
+fn expand_nested(params: &serde_json::Value, key: &str) -> Vec<EffectOperation> {
+    let Some(raw) = params.get(key) else { return Vec::new() };
+    let effects: Vec<YamlCardEffect> = match serde_json::from_value(raw.clone()) {
+        Ok(effects) => effects,
+        Err(e) => {
+            warn!("Failed to parse nested '{}' effects: {}", key, e);
+            return Vec::new();
+        }
+    };
+    effects
+        .into_iter()
+        .flat_map(|eff| expand(eff).operations)
+        .collect()
+}
+
+fn ban_ops(target: &str, params: &serde_json::Value, key: &str) -> Vec<EffectOperation> {
+    param_strings(params, key)
+        .into_iter()
+        .map(|s| EffectOperation::Append {
+            target: target.to_string(),
+            item: Value::String(s),
+        })
+        .collect()
+}
+
+fn add_op(target: &str, amount: i32) -> EffectOperation {
+    EffectOperation::Add {
+        target: target.to_string(),
+        amount,
+    }
+}
+
+fn subtract_op(target: &str, amount: i32) -> EffectOperation {
+    EffectOperation::Subtract {
+        target: target.to_string(),
+        amount,
+    }
+}
+
+fn param_i32(params: &serde_json::Value, key: &str) -> i32 {
+    params
+        .get(key)
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32)
+        .unwrap_or(0)
+}
+
+fn param_usize(params: &serde_json::Value, key: &str, default: usize) -> usize {
+    params
+        .get(key)
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .unwrap_or(default)
+}
+
+fn param_f32(params: &serde_json::Value, key: &str, default: f32) -> f32 {
+    params
+        .get(key)
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32)
+        .unwrap_or(default)
+}
+
+fn param_strings(params: &serde_json::Value, key: &str) -> Vec<String> {
+    params
+        .get(key)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
 }

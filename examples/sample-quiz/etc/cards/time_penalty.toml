@@ -1,4 +1,4 @@
-id = "time_penalty"
+[cards.time_penalty]
 name = "Time Penalty"
 type = "negative"
 permanence = "one_shot"
@@ -7,13 +7,9 @@ cost = 0
 description = "Removes 30 seconds from the timer"
 tags = ["negative", "time"]
 
-[[effects]]
+[[cards.time_penalty.effects]]
 id = "remove_time"
 type = "add_time"
 seconds = -30
 timing = "after"
 priority = 50
-
-[[effects.intercepts]]
-component = "Timer"
-operation = "get_remaining"

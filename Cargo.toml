@@ -14,6 +14,8 @@ rand = "0.8"
 async-trait = "0.1"
 clap = { version = "4.5", features = ["derive"] }
 image = "0.25"
+walkdir = "2.5"
+indexmap = { version = "2.5", features = ["serde"] }
 
 # Native-only dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
