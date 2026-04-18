@@ -15,6 +15,7 @@ mod effect;
 mod effect_executor;
 mod game_state;
 mod modes;
+mod players;
 mod resources;
 mod session;
 mod systems;
@@ -32,6 +33,7 @@ use components::*;
 use content_config::{load_app_config, AppConfig};
 use deploy::CardPlugin;
 use modes::ModesPlugin;
+use players::PlayersPlugin;
 use resources::*;
 use session::StandaloneSessionPlugin;
 use systems::QuizPlugin;
@@ -128,6 +130,7 @@ fn main() {
             CardPlugin,
             Card3dPlugin,
             UiPlugin,
+            PlayersPlugin,
         ))
         .add_systems(Startup, (setup, load_content));
 

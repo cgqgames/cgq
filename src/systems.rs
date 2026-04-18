@@ -142,6 +142,8 @@ fn submit_answer(
     answer_events.send(AnswerSubmittedEvent {
         correct,
         question_id: question.id.clone(),
+        correct_voters: Vec::new(),
+        wrong_voters: Vec::new(),
     });
 
     score.total_answered += 1;

@@ -6,6 +6,7 @@ mod variable_ops;
 mod event_ops;
 mod collection_ops;
 mod control_flow;
+mod player_ops;
 
 use bevy::prelude::*;
 use crate::effect::{EffectOperation, Predicate, Value, CardEffect, EffectContext};
@@ -101,6 +102,11 @@ impl EffectExecutor {
 
         // Try control flow operations
         if let Some(result) = control_flow::execute_control_flow_operation(self, operation, context, state, world) {
+            return result;
+        }
+
+        // Try player operations
+        if let Some(result) = player_ops::execute_player_operation(operation, world) {
             return result;
         }
 

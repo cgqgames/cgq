@@ -106,6 +106,20 @@ fn expand_operations(shorthand: &str, params: &serde_json::Value) -> Vec<EffectO
             operations: expand_nested(params, "do"),
         }],
 
+        // --- Player timeouts ---
+        "timeout_player" => {
+            let target = params
+                .get("target")
+                .and_then(|v| v.as_str())
+                .unwrap_or("last_answerer")
+                .to_string();
+            let seconds = params
+                .get("seconds")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(60);
+            vec![EffectOperation::TimeoutPlayer { target, seconds }]
+        }
+
         _ => {
             warn!("Unknown card effect shorthand: {}", shorthand);
             Vec::new()

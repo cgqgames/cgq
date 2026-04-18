@@ -212,6 +212,14 @@ pub enum EffectOperation {
     GetVariable {
         name: String,
     },
+    /// Apply a timeout to one or more Players. `target` is a selector:
+    /// "all", "last_answerer", "most_correct", "random_N" (N is 1..9),
+    /// or "voted_correctly" / "voted_wrong" (the latter two read the
+    /// most recent `AnswerSubmittedEvent`'s voter lists via the context).
+    TimeoutPlayer {
+        target: String,
+        seconds: u64,
+    },
 }
 
 /// Timing for when effect should execute

@@ -42,12 +42,15 @@ pub struct DeployedEffectsApplied {
 }
 
 /// Emitted when an answer resolves, whether from keyboard input or chat
-/// consensus. Card effects registered via `on_correct_answer` /
-/// `on_wrong_answer` consume this.
+/// consensus. `correct` reflects the team's consensus correctness;
+/// per-player attribution lives in `correct_voters` / `wrong_voters`
+/// (empty for keyboard input, populated for chat consensus).
 #[derive(Event, Debug, Clone)]
 pub struct AnswerSubmittedEvent {
     pub correct: bool,
     pub question_id: String,
+    pub correct_voters: Vec<String>,
+    pub wrong_voters: Vec<String>,
 }
 
 /// Drives card-effect execution. Runs as an exclusive system so the executor

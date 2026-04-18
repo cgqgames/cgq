@@ -10,6 +10,7 @@ pub mod effect;
 pub mod effect_executor;
 pub mod game_state;
 pub mod modes;
+pub mod players;
 pub mod resources;
 pub mod ui_config;
 
